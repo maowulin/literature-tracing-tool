@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { ExaService, type ExaResult } from "@/lib/exaService"
+import { CrossrefService } from "@/lib/crossrefService"
 
 // Define types matching frontend interface
 const LiteratureSchema = z.object({
