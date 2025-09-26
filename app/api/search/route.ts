@@ -4,6 +4,7 @@ import { ExaService, type ExaResult } from "@/lib/exaService"
 import { CrossrefService } from "@/lib/crossrefService"
 import { DeduplicationService } from "@/lib/deduplicationService"
 import { evaluationService, type LiteratureEvaluation } from "@/lib/evaluationService"
+import { sentenceSplitService } from "@/lib/sentenceSplitService"
 
 // Define types matching frontend interface
 const LiteratureSchema = z.object({
@@ -160,26 +161,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const validatedRequest = SearchRequestSchema.parse(body)
     
-    // Split text into sentences
-    const splitIntoSentences = (text: string): string[] => {
-      // First normalize line breaks and multiple spaces
-      const normalized = text.replace(/\r\n/g, '\n').replace(/\s+/g, ' ').trim()
-      
-      // Split by sentence endings, semicolons, and line breaks, preserving the punctuation
-      const matches = normalized.match(/[^。.!?！？;；\n]+[。.!?！？;；\n]?/g)
-      if (!matches) return []
-      
-      return matches
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0)
-        .map((s) => {
-          // Clean up trailing punctuation for better processing while preserving original
-          return s.replace(/[;；\n]+$/, '').trim() || s
-        })
-        .filter((s) => s.length > 3) // Filter out very short segments
-    }
-    
-    const sentences = splitIntoSentences(validatedRequest.text)
+    // Use AI-powered sentence splitting
+    const sentences = await sentenceSplitService.splitIntoSentences(validatedRequest.text)
     
     // Initialize Exa service
     const exaApiKey = process.env.EXA_API_KEY
