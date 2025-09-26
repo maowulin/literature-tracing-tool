@@ -18,8 +18,15 @@ interface SentenceResult {
   literature: LiteratureType[]
 }
 
+interface SearchHistoryItem {
+  id: string
+  query: string
+  timestamp: Date
+  results: { api1: SentenceResult[]; api2: SentenceResult[] }
+}
+
 const sampleQueries = [
-  "子宫疤痕会影响胎盘。子宫疤痕可能导致罕见但严重的并发症，如剖宫产疤痕异位妊娠，涉及胎盘异常生长和出血风险。",
+  "子宫scar痕会影响胎盘。子宫scar痕可能导致罕见但严重的并发症，如剖宫产scar痕异位妊娠，涉及胎盘异常生长和出血风险。",
   "机器学习在医学诊断中的应用越来越广泛。深度学习算法可以自动分析医学图像。人工智能系统能够辅助临床决策。",
   "气候变化对生物多样性产生重大影响。全球变暖改变了物种分布模式。生态系统在气候压力下面临韧性挑战。",
   "量子计算为优化问题提供了新的解决方案。量子算法在某些计算任务上具有指数级优势。",
@@ -50,89 +57,121 @@ export function LiteratureTracer() {
     api1: [],
     api2: [],
   })
+  const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([])
+  const [showHistory, setShowHistory] = useState(false)
   const { toast } = useToast()
+
+  // Load search history from localStorage on component mount
+  useEffect(() => {
+    const savedHistory = localStorage.getItem('literature-search-history')
+    if (savedHistory) {
+      try {
+        const parsedHistory = JSON.parse(savedHistory).map((item: any) => ({
+          ...item,
+          timestamp: new Date(item.timestamp)
+        }))
+        setSearchHistory(parsedHistory)
+      } catch (error) {
+        console.error('Failed to load search history:', error)
+      }
+    }
+  }, [])
+
+
+
+  const addToHistory = (query: string, results: { api1: SentenceResult[]; api2: SentenceResult[] }) => {
+    console.log('addToHistory called with:', { query, results })
+    const newHistoryItem: SearchHistoryItem = {
+      id: Date.now().toString(),
+      query,
+      timestamp: new Date(),
+      results
+    }
+
+    setSearchHistory(prev => {
+      // Remove duplicate queries and keep only the latest 10 items
+      const filtered = prev.filter(item => item.query !== query)
+      const newHistory = [newHistoryItem, ...filtered].slice(0, 10)
+      
+      console.log('Saving to localStorage:', newHistory)
+      // Save to localStorage
+      localStorage.setItem('literature-search-history', JSON.stringify(newHistory))
+      
+      return newHistory
+    })
+  }
+
+  const loadFromHistory = (historyItem: SearchHistoryItem) => {
+    setQuery(historyItem.query)
+    setCurrentResults(historyItem.results)
+    setHasSearched(true)
+    setShowHistory(false)
+    setSearchError(null)
+  }
+
+  const clearHistory = () => {
+    setSearchHistory([])
+    localStorage.removeItem('literature-search-history')
+    toast({
+      title: "历史记录已清空",
+      description: "所有搜索历史记录已被删除",
+    })
+  }
 
   const handleSampleQuery = (sampleQuery: string) => {
     setQuery(sampleQuery)
     setSearchError(null)
   }
 
-  const handleSearch = async (isRetry = false) => {
-    if (!query.trim()) return
+  const handleSearch = async () => {
+    console.log('handleSearch called with query:', query.trim())
+    
+    if (!query.trim()) {
+      console.log('Empty query, returning early')
+      return
+    }
 
     setIsSearching(true)
     setSearchError(null)
-    
-    if (!isRetry) {
-      setRetryCount(0)
-    }
+    console.log('Starting search process')
 
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
-
+      console.log('About to call API with query:', query.trim())
       const response = await fetch('/api/search', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ text: query.trim() }),
-        signal: controller.signal,
+        body: JSON.stringify({ query: query.trim() }),
       })
 
-      clearTimeout(timeoutId)
-
+      console.log('API response status:', response.status)
+      
       if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`Search failed: ${response.status} ${response.statusText}. ${errorText}`)
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
 
       const data = await response.json()
+      console.log('API response data:', data)
       
-      if (!data || (!data.api1 && !data.api2)) {
-        throw new Error('Invalid response format from search API')
-      }
-
       setCurrentResults(data)
       setHasSearched(true)
-      setSearchError(null)
-      setRetryCount(0)
       
-      toast({ 
-        description: "搜索完成！找到相关文献", 
-        variant: "default" 
-      })
+      console.log('About to call addToHistory')
+      addToHistory(query.trim(), data)
+      console.log('addToHistory call completed')
+      
     } catch (error) {
-      console.error('Search failed:', error)
-      
-      let errorMessage = "搜索失败，请稍后重试"
-      
-      if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          errorMessage = "搜索超时，请检查网络连接后重试"
-        } else if (error.message.includes('Failed to fetch')) {
-          errorMessage = "网络连接失败，请检查网络后重试"
-        } else if (error.message.includes('500')) {
-          errorMessage = "服务器内部错误，请稍后重试"
-        } else if (error.message.includes('429')) {
-          errorMessage = "请求过于频繁，请稍后重试"
-        }
-      }
-      
-      setSearchError(errorMessage)
-      setRetryCount(prev => prev + 1)
-      
-      toast({ 
-        description: errorMessage, 
-        variant: "destructive" 
-      })
+      console.error('Search error:', error)
+      setSearchError(error instanceof Error ? error.message : 'Search failed')
     } finally {
       setIsSearching(false)
+      console.log('Search process completed')
     }
   }
 
   const handleRetry = () => {
-    handleSearch(true)
+    handleSearch()
   }
 
   const copyToClipboard = (text: string, label: string) => {
@@ -313,6 +352,51 @@ export function LiteratureTracer() {
                   className="pl-10 h-12 text-base"
                 />
               </div>
+              <DropdownMenu open={showHistory} onOpenChange={setShowHistory}>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" className="h-12 w-12" disabled={searchHistory.length === 0}>
+                    <History className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-80 max-h-96 overflow-y-auto">
+                  <div className="flex items-center justify-between p-2 border-b">
+                    <span className="text-sm font-medium">搜索历史</span>
+                    {searchHistory.length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={clearHistory}
+                        className="h-6 px-2 text-xs"
+                      >
+                        <Trash2 className="w-3 h-3 mr-1" />
+                        清空
+                      </Button>
+                    )}
+                  </div>
+                  {searchHistory.length === 0 ? (
+                    <div className="p-4 text-center text-sm text-muted-foreground">
+                      暂无搜索历史
+                    </div>
+                  ) : (
+                    searchHistory.map((item) => (
+                      <DropdownMenuItem
+                        key={item.id}
+                        onClick={() => loadFromHistory(item)}
+                        className="flex flex-col items-start p-3 cursor-pointer"
+                      >
+                        <div className="text-sm font-medium line-clamp-2 mb-1">
+                          {item.query}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {item.timestamp.toLocaleString('zh-CN')} • 
+                          API1: {item.results.api1.length} 句 • 
+                          API2: {item.results.api2.length} 句
+                        </div>
+                      </DropdownMenuItem>
+                    ))
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button onClick={() => handleSearch()} disabled={isSearching || !query.trim()} className="h-12 px-6">
                 {isSearching ? (
                   <>
