@@ -1,138 +1,134 @@
-import { z } from "zod"
+import Exa from 'exa-js';
+import { z } from 'zod';
 
-// Exa API response types
+// Exa API response schemas
 const ExaResultSchema = z.object({
+  id: z.string(),
   title: z.string(),
   url: z.string(),
   publishedDate: z.string().optional(),
   author: z.string().optional(),
   text: z.string().optional(),
   highlights: z.array(z.string()).optional(),
-  summary: z.string().optional(),
-})
+  highlightScores: z.array(z.number()).optional(),
+  score: z.number().optional(),
+});
 
 const ExaSearchResponseSchema = z.object({
   results: z.array(ExaResultSchema),
-  requestId: z.string(),
-})
+  autopromptString: z.string().optional(),
+});
 
-type ExaResult = z.infer<typeof ExaResultSchema>
-type ExaSearchResponse = z.infer<typeof ExaSearchResponseSchema>
+export type ExaResult = z.infer<typeof ExaResultSchema>;
+export type ExaSearchResponse = z.infer<typeof ExaSearchResponseSchema>;
 
-// Exa search options
-interface ExaSearchOptions {
-  type?: "neural" | "keyword" | "auto"
-  category?: "research_paper" | "news_article" | "company" | "pdf"
-  numResults?: number
-  useAutoprompt?: boolean
-  includeDomains?: string[]
-  excludeDomains?: string[]
-  startPublishedDate?: string
-  endPublishedDate?: string
-  text?: {
-    includeHtmlTags?: boolean
-    maxCharacters?: number
-  }
-  highlights?: {
-    query?: string
-    numSentences?: number
-    highlightsPerUrl?: number
-  }
-  summary?: {
-    query?: string
-  }
+export interface ExaSearchOptions {
+  query: string;
+  numResults?: number;
+  includeDomains?: string[];
+  excludeDomains?: string[];
+  startCrawlDate?: string;
+  endCrawlDate?: string;
+  startPublishedDate?: string;
+  endPublishedDate?: string;
+  useAutoprompt?: boolean;
+  type?: 'neural' | 'keyword';
+  category?: 'research paper' | 'news' | 'company' | 'pdf';
+  includeText?: boolean;
+  includeHighlights?: boolean;
+  includeSummary?: boolean;
 }
 
-class ExaService {
-  private apiKey: string
-  private baseUrl = "https://api.exa.ai"
+export class ExaService {
+  private exa: Exa;
 
   constructor(apiKey: string) {
-    this.apiKey = apiKey
+    this.exa = new Exa(apiKey);
   }
 
-  async search(query: string, options: ExaSearchOptions = {}): Promise<ExaResult[]> {
-    const defaultOptions: ExaSearchOptions = {
-      type: "neural",
-      category: "research_paper",
-      numResults: 10,
-      useAutoprompt: true,
-      text: {
-        maxCharacters: 1000,
-      },
-      highlights: {
-        numSentences: 2,
-        highlightsPerUrl: 3,
-      },
-      summary: {
-        query: "What is the main contribution and findings of this research?",
-      },
-    }
-
-    const searchOptions = { ...defaultOptions, ...options }
-
+  async search(options: ExaSearchOptions): Promise<ExaResult[]> {
     try {
-      const response = await fetch(`${this.baseUrl}/search`, {
-        method: "POST",
-        headers: {
-          "x-api-key": this.apiKey,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          query,
-          ...searchOptions,
-        }),
-      })
+      // Prepare search options for exa-js SDK
+      const searchOptions: any = {
+        numResults: options.numResults || 5,
+        includeDomains: options.includeDomains,
+        excludeDomains: options.excludeDomains,
+        startCrawlDate: options.startCrawlDate,
+        endCrawlDate: options.endCrawlDate,
+        startPublishedDate: options.startPublishedDate,
+        endPublishedDate: options.endPublishedDate,
+        useAutoprompt: options.useAutoprompt !== false,
+        type: options.type || 'neural',
+        category: options.category || 'research paper',
+      };
 
-      if (!response.ok) {
-        throw new Error(`Exa API error: ${response.status} ${response.statusText}`)
+      // Prepare contents options
+      const contentsOptions: any = {};
+      if (options.includeText !== false) {
+        contentsOptions.text = true;
+      }
+      if (options.includeHighlights !== false) {
+        contentsOptions.highlights = true;
+      }
+      if (options.includeSummary) {
+        contentsOptions.summary = true;
       }
 
-      const data = await response.json()
-      const validatedData = ExaSearchResponseSchema.parse(data)
+      // Use searchAndContents with query as first parameter and options as second
+      const response = await this.exa.searchAndContents(options.query, {
+        ...searchOptions,
+        ...contentsOptions,
+      });
       
-      return validatedData.results
+      // Transform the response to match our schema
+      const transformedResults = response.results.map((result: any) => ({
+        id: result.id,
+        title: result.title,
+        url: result.url,
+        publishedDate: result.publishedDate,
+        author: result.author,
+        text: result.text,
+        highlights: result.highlights,
+        highlightScores: result.highlightScores,
+        score: result.score,
+      }));
+
+      return ExaResultSchema.array().parse(transformedResults);
     } catch (error) {
-      console.error("Exa search failed:", error)
-      throw error
+      console.error('Exa search error:', error);
+      throw new Error(`Exa search failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
-  async searchMultipleQueries(queries: string[], options: ExaSearchOptions = {}): Promise<ExaResult[][]> {
+  async searchMultipleQueries(queries: string[], options?: Omit<ExaSearchOptions, 'query'>): Promise<ExaResult[][]> {
     const searchPromises = queries.map(query => 
-      this.search(query, options).catch(error => {
-        console.error(`Search failed for query "${query}":`, error)
-        return [] // Return empty array on failure
-      })
-    )
-
-    return Promise.all(searchPromises)
+      this.searchWithRetry({ ...options, query })
+    );
+    
+    return Promise.all(searchPromises);
   }
 
-  // Retry mechanism with exponential backoff
   async searchWithRetry(
-    query: string, 
-    options: ExaSearchOptions = {}, 
-    maxRetries = 3
+    options: ExaSearchOptions, 
+    maxRetries: number = 3, 
+    baseDelay: number = 1000
   ): Promise<ExaResult[]> {
-    let lastError: Error
-
+    let lastError: Error | null = null;
+    
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        return await this.search(query, options)
+        return await this.search(options);
       } catch (error) {
-        lastError = error as Error
+        lastError = error instanceof Error ? error : new Error('Unknown error');
         
         if (attempt < maxRetries - 1) {
-          const delay = Math.pow(2, attempt) * 1000 // Exponential backoff
-          console.log(`Exa search attempt ${attempt + 1} failed, retrying in ${delay}ms...`)
-          await new Promise(resolve => setTimeout(resolve, delay))
+          const delay = baseDelay * Math.pow(2, attempt);
+          console.warn(`Exa search attempt ${attempt + 1} failed, retrying in ${delay}ms:`, lastError.message);
+          await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
     }
-
-    throw lastError!
+    
+    throw lastError || new Error('Max retries exceeded');
   }
 }
-
-export { ExaService, type ExaResult, type ExaSearchOptions }

@@ -65,11 +65,69 @@ const mockLiteratureData: Literature[] = [
   },
 ]
 
+// Helper function to convert Exa results to Literature format
+function convertExaResultToLiterature(exaResult: ExaResult, id: number): Literature {
+  // Extract year from publishedDate if available
+  const year = exaResult.publishedDate 
+    ? new Date(exaResult.publishedDate).getFullYear() 
+    : new Date().getFullYear()
+
+  // Extract authors from author field or use placeholder
+  const authors = exaResult.author 
+    ? [exaResult.author] 
+    : ["Unknown Author"]
+
+  // Extract DOI from URL if it's a DOI link, otherwise use URL
+  const doi = exaResult.url.includes("doi.org") 
+    ? exaResult.url.replace("https://doi.org/", "")
+    : exaResult.url
+
+  // Extract journal name from URL or use placeholder
+  const journal = extractJournalFromUrl(exaResult.url)
+
+  return {
+    id,
+    title: exaResult.title,
+    authors,
+    journal,
+    year,
+    doi,
+    verified: false, // Exa results are not Crossref verified yet
+    abstract: exaResult.text || exaResult.summary,
+    supportingPages: exaResult.highlights?.length || 1,
+  }
+}
+
+// Helper function to extract journal name from URL
+function extractJournalFromUrl(url: string): string {
+  try {
+    const hostname = new URL(url).hostname
+    
+    // Common academic domains
+    if (hostname.includes("arxiv.org")) return "arXiv"
+    if (hostname.includes("pubmed.ncbi.nlm.nih.gov")) return "PubMed"
+    if (hostname.includes("nature.com")) return "Nature"
+    if (hostname.includes("science.org")) return "Science"
+    if (hostname.includes("cell.com")) return "Cell"
+    if (hostname.includes("nejm.org")) return "New England Journal of Medicine"
+    if (hostname.includes("thelancet.com")) return "The Lancet"
+    if (hostname.includes("bmj.com")) return "BMJ"
+    if (hostname.includes("springer.com")) return "Springer"
+    if (hostname.includes("wiley.com")) return "Wiley"
+    if (hostname.includes("elsevier.com")) return "Elsevier"
+    if (hostname.includes("ieee.org")) return "IEEE"
+    if (hostname.includes("acm.org")) return "ACM"
+    
+    // Default to hostname without www
+    return hostname.replace("www.", "")
+  } catch {
+    return "Unknown Journal"
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    
-    // Validate request body
     const validatedRequest = SearchRequestSchema.parse(body)
     
     // Split text into sentences
@@ -81,31 +139,67 @@ export async function POST(request: NextRequest) {
     
     const sentences = splitIntoSentences(validatedRequest.text)
     
-    // Simulate processing delay
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // Generate mock results for each sentence
-    const api1Results: SentenceResult[] = sentences.map((sentence, index) => ({
-      sentence,
-      sentenceIndex: index + 1,
-      literature: mockLiteratureData.slice(0, Math.min(2, mockLiteratureData.length)),
-    }))
-    
-    const api2Results: SentenceResult[] = sentences.map((sentence, index) => ({
-      sentence,
-      sentenceIndex: index + 1,
-      literature: mockLiteratureData.slice(1, Math.min(3, mockLiteratureData.length)),
-    }))
-    
-    const response = {
-      api1: api1Results,
-      api2: api2Results,
+    // Initialize Exa service
+    const exaApiKey = process.env.EXA_API_KEY
+    if (!exaApiKey) {
+      console.warn("EXA_API_KEY not found, falling back to mock data")
+      return await fallbackToMockData(sentences)
     }
+
+    const exaService = new ExaService(exaApiKey)
     
-    // Validate response
-    const validatedResponse = SearchResponseSchema.parse(response)
-    
-    return NextResponse.json(validatedResponse)
+    try {
+      // Search with Exa for each sentence concurrently
+      const exaResults = await exaService.searchMultipleQueries(sentences, {
+        type: "neural",
+        category: "research_paper",
+        numResults: 3,
+        text: { maxCharacters: 500 },
+        highlights: { numSentences: 2 },
+        summary: { query: "What is the main contribution and findings?" },
+      })
+
+      // Convert Exa results to our Literature format
+      let literatureId = 1
+      const api1Results: SentenceResult[] = sentences.map((sentence, index) => {
+        const exaResultsForSentence = exaResults[index] || []
+        const literature = exaResultsForSentence
+          .slice(0, 2) // Take first 2 results for API 1
+          .map(exaResult => convertExaResultToLiterature(exaResult, literatureId++))
+        
+        return {
+          sentence,
+          sentenceIndex: index + 1,
+          literature,
+        }
+      })
+
+      const api2Results: SentenceResult[] = sentences.map((sentence, index) => {
+        const exaResultsForSentence = exaResults[index] || []
+        const literature = exaResultsForSentence
+          .slice(1, 3) // Take results 2-3 for API 2 (different subset)
+          .map(exaResult => convertExaResultToLiterature(exaResult, literatureId++))
+        
+        return {
+          sentence,
+          sentenceIndex: index + 1,
+          literature,
+        }
+      })
+
+      const response = {
+        api1: api1Results,
+        api2: api2Results,
+      }
+
+      const validatedResponse = SearchResponseSchema.parse(response)
+      return NextResponse.json(validatedResponse)
+
+    } catch (exaError) {
+      console.error("Exa search failed, falling back to mock data:", exaError)
+      return await fallbackToMockData(sentences)
+    }
+
   } catch (error) {
     console.error("Search API error:", error)
     
@@ -121,4 +215,31 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
+}
+
+// Fallback function for mock data
+async function fallbackToMockData(sentences: string[]) {
+  // Simulate processing delay
+  await new Promise(resolve => setTimeout(resolve, 1000))
+  
+  // Generate mock results for each sentence
+  const api1Results: SentenceResult[] = sentences.map((sentence, index) => ({
+    sentence,
+    sentenceIndex: index + 1,
+    literature: mockLiteratureData.slice(0, Math.min(2, mockLiteratureData.length)),
+  }))
+  
+  const api2Results: SentenceResult[] = sentences.map((sentence, index) => ({
+    sentence,
+    sentenceIndex: index + 1,
+    literature: mockLiteratureData.slice(1, Math.min(3, mockLiteratureData.length)),
+  }))
+  
+  const response = {
+    api1: api1Results,
+    api2: api2Results,
+  }
+  
+  const validatedResponse = SearchResponseSchema.parse(response)
+  return NextResponse.json(validatedResponse)
 }
