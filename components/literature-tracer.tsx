@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, ExternalLink, Copy, ChevronDown, Users, BookOpen, Calendar, Info, AlertCircle, RefreshCw, History, Trash2, Star, TrendingUp, Shield, Award } from "lucide-react"
+import { Search, ExternalLink, Copy, ChevronDown, Users, BookOpen, Calendar, Info, AlertCircle, RefreshCw, History, Trash2, Star, TrendingUp, Shield, Award, ChevronUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -34,17 +34,13 @@ const sampleQueries = [
 ]
 
 const decodeHtmlEntities = (s: string): string => {
-  return s
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
+  const txt = document.createElement("textarea")
+  txt.innerHTML = s
+  return txt.value
 }
 
 const cleanTitle = (raw: string): string => {
-  const stripped = raw.replace(/<[^>]+>/g, "")
-  return decodeHtmlEntities(stripped)
+  return decodeHtmlEntities(raw).replace(/\s+/g, " ").trim()
 }
 
 export function LiteratureTracer() {
@@ -59,241 +55,295 @@ export function LiteratureTracer() {
   })
   const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([])
   const [showHistory, setShowHistory] = useState(false)
+  const [expandedAbstracts, setExpandedAbstracts] = useState<Set<number>>(new Set())
   const { toast } = useToast()
 
-  // Load search history from localStorage on component mount
   useEffect(() => {
-    const savedHistory = localStorage.getItem('literature-search-history')
+    const savedHistory = localStorage.getItem("literature-search-history")
     if (savedHistory) {
       try {
-        const parsedHistory = JSON.parse(savedHistory).map((item: any) => ({
+        const parsed = JSON.parse(savedHistory)
+        setSearchHistory(parsed.map((item: any) => ({
           ...item,
           timestamp: new Date(item.timestamp)
-        }))
-        setSearchHistory(parsedHistory)
+        })))
       } catch (error) {
-        console.error('Failed to load search history:', error)
+        console.error("Failed to parse search history:", error)
       }
     }
   }, [])
 
-
-
-  const addToHistory = (query: string, results: { api1: SentenceResult[]; api2: SentenceResult[] }) => {
-    console.log('addToHistory called with:', { query, results })
-    const newHistoryItem: SearchHistoryItem = {
+  const saveToHistory = (query: string, results: { api1: SentenceResult[]; api2: SentenceResult[] }) => {
+    const historyItem: SearchHistoryItem = {
       id: Date.now().toString(),
       query,
       timestamp: new Date(),
       results
     }
-
-    setSearchHistory(prev => {
-      // Remove duplicate queries and keep only the latest 10 items
-      const filtered = prev.filter(item => item.query !== query)
-      const newHistory = [newHistoryItem, ...filtered].slice(0, 10)
-      
-      console.log('Saving to localStorage:', newHistory)
-      // Save to localStorage
-      localStorage.setItem('literature-search-history', JSON.stringify(newHistory))
-      
-      return newHistory
-    })
-  }
-
-  const loadFromHistory = (historyItem: SearchHistoryItem) => {
-    setQuery(historyItem.query)
-    setCurrentResults(historyItem.results)
-    setHasSearched(true)
-    setShowHistory(false)
-    setSearchError(null)
+    
+    const newHistory = [historyItem, ...searchHistory.slice(0, 9)]
+    setSearchHistory(newHistory)
+    
+    try {
+      localStorage.setItem("literature-search-history", JSON.stringify(newHistory))
+    } catch (error) {
+      console.error("Failed to save search history:", error)
+    }
   }
 
   const clearHistory = () => {
     setSearchHistory([])
-    localStorage.removeItem('literature-search-history')
-    toast({
-      title: "历史记录已清空",
-      description: "所有搜索历史记录已被删除",
-    })
+    localStorage.removeItem("literature-search-history")
+    toast({ description: "Search history cleared" })
   }
 
-  const handleSampleQuery = (sampleQuery: string) => {
-    setQuery(sampleQuery)
-    setSearchError(null)
+  const loadFromHistory = (item: SearchHistoryItem) => {
+    setQuery(item.query)
+    setCurrentResults(item.results)
+    setHasSearched(true)
+    setShowHistory(false)
+    toast({ description: "Search loaded from history" })
   }
 
   const handleSearch = async () => {
-    console.log('handleSearch called with query:', query.trim())
-    
-    if (!query.trim()) {
-      console.log('Empty query, returning early')
-      return
-    }
+    if (!query.trim()) return
 
     setIsSearching(true)
     setSearchError(null)
-    console.log('Starting search process')
+    setHasSearched(true)
 
     try {
-      console.log('About to call API with query:', query.trim())
-      const response = await fetch('/api/search', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+      const response = await fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: query.trim() }),
       })
 
-      console.log('API response status:', response.status)
-      
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        throw new Error(`Search failed: ${response.status}`)
       }
 
       const data = await response.json()
-      console.log('API response data:', data)
-      
       setCurrentResults(data)
-      setHasSearched(true)
-      
-      console.log('About to call addToHistory')
-      addToHistory(query.trim(), data)
-      console.log('addToHistory call completed')
-      
+      saveToHistory(query.trim(), data)
+      setRetryCount(0)
     } catch (error) {
-      console.error('Search error:', error)
-      setSearchError(error instanceof Error ? error.message : 'Search failed')
+      console.error("Search error:", error)
+      setSearchError(error instanceof Error ? error.message : "Search failed")
+      setRetryCount(prev => prev + 1)
     } finally {
       setIsSearching(false)
-      console.log('Search process completed')
     }
   }
 
   const handleRetry = () => {
-    handleSearch()
+    if (retryCount < 3) {
+      handleSearch()
+    } else {
+      toast({
+        title: "Maximum retries reached",
+        description: "Please try again later or contact support",
+        variant: "destructive"
+      })
+    }
   }
 
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text)
-    toast({ description: `${label} copied` })
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !isSearching) {
+      handleSearch()
+    }
   }
 
-  const LiteratureCard = ({ literature, index }: { literature: LiteratureType; index: number }) => (
-    <Card className="mb-4 border border-border">
-      <CardContent className="p-6">
-        <div className="flex items-start gap-4">
-          <div className="flex-shrink-0">
-            <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-medium">
-              {index + 1}
+  const useSampleQuery = (sampleQuery: string) => {
+    setQuery(sampleQuery)
+  }
+
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      toast({ description: `${label} copied` })
+    } catch (error) {
+      console.error("Failed to copy:", error)
+      toast({ description: `Failed to copy ${label}`, variant: "destructive" })
+    }
+  }
+
+  const toggleAbstract = (literatureId: number) => {
+    setExpandedAbstracts(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(literatureId)) {
+        newSet.delete(literatureId)
+      } else {
+        newSet.add(literatureId)
+      }
+      return newSet
+    })
+  }
+
+  const truncateText = (text: string, maxLength: number = 300) => {
+    if (text.length <= maxLength) return text
+    return text.substring(0, maxLength) + "..."
+  }
+
+  const highlightRelevantText = (text: string, query: string) => {
+    if (!query.trim()) return text
+    
+    const queryWords = query.toLowerCase().split(/\s+/).filter(word => word.length > 1)
+    let highlightedText = text
+    
+    queryWords.forEach(word => {
+      const regex = new RegExp(`(${word})`, 'gi')
+      highlightedText = highlightedText.replace(regex, '<mark class="bg-yellow-200 px-1 rounded">$1</mark>')
+    })
+    
+    return highlightedText
+  }
+
+  const LiteratureCard = ({ literature, index }: { literature: LiteratureType; index: number }) => {
+    const isExpanded = expandedAbstracts.has(literature.id)
+    const abstractText = literature.abstract || ""
+    const shouldTruncate = abstractText.length > 300
+    const displayText = isExpanded || !shouldTruncate ? abstractText : truncateText(abstractText)
+    const highlightedText = highlightRelevantText(displayText, query)
+
+    return (
+      <Card className="border border-border hover:shadow-md transition-shadow">
+        <CardContent className="p-4">
+          <div className="space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0">
+                <div className="w-6 h-6 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-medium">
+                  {index + 1}
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="text-base font-medium text-foreground leading-snug break-words">
+                  {cleanTitle(literature.title)}
+                </h4>
+                <div className="flex flex-wrap items-center gap-2 mt-2 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-1">
+                    <Users className="w-3 h-3" />
+                    <span className="break-words">{literature.authors.join(", ")}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <BookOpen className="w-3 h-3" />
+                    <span className="break-words">{literature.journal}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Calendar className="w-3 h-3" />
+                    <span>{literature.year}</span>
+                  </div>
+                  {literature.verified && (
+                    <Badge variant="secondary" className="text-xs">
+                      Verified
+                    </Badge>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div className="flex-1 space-y-3">
-            <div className="flex items-center gap-3 mb-2">
-              {literature.verified && (
-                <Badge className="bg-verified text-verified-foreground hover:bg-verified/90">Crossref Verified</Badge>
+            <div className="flex items-center gap-4 text-sm">
+              {literature.impactFactor && (
+                <div className="flex items-center gap-2 px-2 py-1 bg-blue-50 text-blue-700 rounded-md">
+                  <span className="font-medium">IF:</span>
+                  <span className="font-semibold">{literature.impactFactor}</span>
+                </div>
+              )}
+              {literature.citationCount && (
+                <div className="flex items-center gap-2 px-2 py-1 bg-green-50 text-green-700 rounded-md">
+                  <span className="font-medium">引用:</span>
+                  <span className="font-semibold">{literature.citationCount}</span>
+                </div>
               )}
             </div>
 
-            <h4 className="text-base font-medium text-foreground leading-relaxed">{cleanTitle(literature.title)}</h4>
-
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Users className="w-4 h-4" />
-                <span>{literature.authors.join(", ")}</span>
-              </div>
-
-              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <BookOpen className="w-4 h-4" />
-                  <span>{literature.journal}</span>
+            {literature.evaluation && (
+              <div className="bg-gradient-to-r from-purple-50 to-indigo-50 p-4 rounded-lg border border-purple-200">
+                <div className="flex items-center gap-2 mb-3">
+                  <Award className="w-4 h-4 text-purple-600" />
+                  <span className="text-sm font-medium text-purple-800">AI质量评估</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4" />
-                  <span>{literature.year}</span>
+                
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                  <div className="flex items-center gap-2">
+                    <Star className="w-3 h-3 text-yellow-500" />
+                    <span className="text-xs text-gray-600">相关性</span>
+                    <span className="text-sm font-semibold text-purple-700">
+                      {literature.evaluation.relevanceScore.toFixed(1)}/10
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-3 h-3 text-green-500" />
+                    <span className="text-xs text-gray-600">可信度</span>
+                    <span className="text-sm font-semibold text-purple-700">
+                      {literature.evaluation.credibilityScore.toFixed(1)}/10
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="w-3 h-3 text-blue-500" />
+                    <span className="text-xs text-gray-600">影响力</span>
+                    <span className="text-sm font-semibold text-purple-700">
+                      {literature.evaluation.impactScore.toFixed(1)}/10
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Award className="w-3 h-3 text-purple-500" />
+                    <span className="text-xs text-gray-600">综合</span>
+                    <span className="text-sm font-semibold text-purple-700">
+                      {literature.evaluation.overallScore.toFixed(1)}/10
+                    </span>
+                  </div>
                 </div>
-              </div>
-
-              <div className="flex items-center gap-4 text-sm">
-                {literature.impactFactor && (
-                  <div className="flex items-center gap-2 px-2 py-1 bg-blue-50 text-blue-700 rounded-md">
-                    <span className="font-medium">IF:</span>
-                    <span className="font-semibold">{literature.impactFactor}</span>
+                
+                <div className="text-xs text-purple-700 leading-relaxed break-words">
+                  <strong>评估理由：</strong>{literature.evaluation.reasoning}
+                </div>
+                
+                {literature.evaluation.strengths.length > 0 && (
+                  <div className="mt-2 text-xs">
+                    <span className="font-medium text-green-700">优势：</span>
+                    <span className="text-green-600 break-words">{literature.evaluation.strengths.join(', ')}</span>
                   </div>
                 )}
-                {literature.citationCount && (
-                  <div className="flex items-center gap-2 px-2 py-1 bg-green-50 text-green-700 rounded-md">
-                    <span className="font-medium">引用:</span>
-                    <span className="font-semibold">{literature.citationCount}</span>
+                
+                {literature.evaluation.limitations.length > 0 && (
+                  <div className="mt-1 text-xs">
+                    <span className="font-medium text-orange-700">局限：</span>
+                    <span className="text-orange-600 break-words">{literature.evaluation.limitations.join(', ')}</span>
                   </div>
                 )}
               </div>
-
-              {/* GPT-5 Quality Evaluation */}
-              {literature.evaluation && (
-                <div className="bg-gradient-to-r from-purple-50 to-indigo-50 p-4 rounded-lg border border-purple-200">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Award className="w-4 h-4 text-purple-600" />
-                    <span className="text-sm font-medium text-purple-800">AI质量评估</span>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-                    <div className="flex items-center gap-2">
-                      <Star className="w-3 h-3 text-yellow-500" />
-                      <span className="text-xs text-gray-600">相关性</span>
-                      <span className="text-sm font-semibold text-purple-700">
-                        {literature.evaluation.relevanceScore.toFixed(1)}/10
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Shield className="w-3 h-3 text-green-500" />
-                      <span className="text-xs text-gray-600">可信度</span>
-                      <span className="text-sm font-semibold text-purple-700">
-                        {literature.evaluation.credibilityScore.toFixed(1)}/10
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <TrendingUp className="w-3 h-3 text-blue-500" />
-                      <span className="text-xs text-gray-600">影响力</span>
-                      <span className="text-sm font-semibold text-purple-700">
-                        {literature.evaluation.impactScore.toFixed(1)}/10
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Award className="w-3 h-3 text-purple-500" />
-                      <span className="text-xs text-gray-600">综合</span>
-                      <span className="text-sm font-semibold text-purple-700">
-                        {literature.evaluation.overallScore.toFixed(1)}/10
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div className="text-xs text-purple-700 leading-relaxed">
-                    <strong>评估理由：</strong>{literature.evaluation.reasoning}
-                  </div>
-                  
-                  {literature.evaluation.strengths.length > 0 && (
-                    <div className="mt-2 text-xs">
-                      <span className="font-medium text-green-700">优势：</span>
-                      <span className="text-green-600">{literature.evaluation.strengths.join(', ')}</span>
-                    </div>
-                  )}
-                  
-                  {literature.evaluation.limitations.length > 0 && (
-                    <div className="mt-1 text-xs">
-                      <span className="font-medium text-orange-700">局限：</span>
-                      <span className="text-orange-600">{literature.evaluation.limitations.join(', ')}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            )}
 
             {literature.abstract && (
               <div className="bg-muted/30 p-4 rounded-lg border-l-4 border-primary/30">
-                <h5 className="text-sm font-medium text-foreground mb-2">摘要</h5>
-                <p className="text-sm text-muted-foreground leading-relaxed">{literature.abstract}</p>
+                <div className="flex items-center justify-between mb-2">
+                  <h5 className="text-sm font-medium text-foreground">摘要</h5>
+                  {shouldTruncate && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => toggleAbstract(literature.id)}
+                      className="h-6 px-2 text-xs"
+                    >
+                      {isExpanded ? (
+                        <>
+                          <ChevronUp className="w-3 h-3 mr-1" />
+                          收起
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="w-3 h-3 mr-1" />
+                          展开
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
+                <div 
+                  className="text-sm text-muted-foreground leading-relaxed break-words overflow-hidden max-w-full"
+                  dangerouslySetInnerHTML={{ __html: highlightedText }}
+                />
               </div>
             )}
 
@@ -305,7 +355,7 @@ export function LiteratureTracer() {
             </div>
 
             <div className="flex items-center justify-between pt-2">
-              <div className="text-sm text-muted-foreground">
+              <div className="text-sm text-muted-foreground break-words max-w-[60%]">
                 <span className="font-medium">DOI:</span> {literature.doi}
               </div>
 
@@ -365,10 +415,10 @@ export function LiteratureTracer() {
               </div>
             </div>
           </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
+        </CardContent>
+      </Card>
+    )
+  }
 
   const SentenceResultSection = ({ sentenceResult }: { sentenceResult: SentenceResult }) => (
     <div className="mb-8">
@@ -379,7 +429,7 @@ export function LiteratureTracer() {
           </div>
         </div>
         <div className="flex-1">
-          <h3 className="text-lg font-medium text-foreground leading-relaxed">{sentenceResult.sentence}</h3>
+          <h3 className="text-lg font-medium text-foreground leading-relaxed break-words">{sentenceResult.sentence}</h3>
           <p className="text-sm text-muted-foreground mt-2">
             Supporting References ({sentenceResult.literature.length} papers)
           </p>
@@ -395,8 +445,7 @@ export function LiteratureTracer() {
   )
 
   return (
-    <div className="space-y-6">
-      {/* 搜索区域 */}
+    <div className="max-w-6xl mx-auto space-y-6">
       <Card className="border border-border">
         <CardContent className="p-6">
           <div className="space-y-4">
@@ -407,141 +456,117 @@ export function LiteratureTracer() {
                   placeholder="输入要查询的文本内容（支持多句话）..."
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && !isSearching && handleSearch()}
-                  className="pl-10 h-12 text-base"
+                  onKeyPress={handleKeyPress}
+                  className="pl-10"
+                  disabled={isSearching}
                 />
               </div>
-              <DropdownMenu open={showHistory} onOpenChange={setShowHistory}>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" className="h-12 w-12" disabled={searchHistory.length === 0}>
-                    <History className="w-4 h-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-80 max-h-96 overflow-y-auto">
-                  <div className="flex items-center justify-between p-2 border-b">
-                    <span className="text-sm font-medium">搜索历史</span>
-                    {searchHistory.length > 0 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={clearHistory}
-                        className="h-6 px-2 text-xs"
-                      >
-                        <Trash2 className="w-3 h-3 mr-1" />
-                        清空
-                      </Button>
-                    )}
-                  </div>
-                  {searchHistory.length === 0 ? (
-                    <div className="p-4 text-center text-sm text-muted-foreground">
-                      暂无搜索历史
-                    </div>
-                  ) : (
-                    searchHistory.map((item) => (
-                      <DropdownMenuItem
-                        key={item.id}
-                        onClick={() => loadFromHistory(item)}
-                        className="flex flex-col items-start p-3 cursor-pointer"
-                      >
-                        <div className="text-sm font-medium line-clamp-2 mb-1">
-                          {item.query}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {item.timestamp.toLocaleString('zh-CN')} • 
-                          API1: {item.results.api1.length} 句 • 
-                          API2: {item.results.api2.length} 句
-                        </div>
-                      </DropdownMenuItem>
-                    ))
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <Button onClick={() => handleSearch()} disabled={isSearching || !query.trim()} className="h-12 px-6">
+              <Button onClick={handleSearch} disabled={isSearching || !query.trim()}>
                 {isSearching ? (
                   <>
                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                     搜索中...
                   </>
                 ) : (
-                  "搜索文献"
+                  <>
+                    <Search className="w-4 h-4 mr-2" />
+                    搜索
+                  </>
                 )}
               </Button>
+              <DropdownMenu open={showHistory} onOpenChange={setShowHistory}>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon">
+                    <History className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-80">
+                  <div className="flex items-center justify-between p-2 border-b">
+                    <span className="text-sm font-medium">Search History</span>
+                    {searchHistory.length > 0 && (
+                      <Button variant="ghost" size="sm" onClick={clearHistory}>
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    )}
+                  </div>
+                  {searchHistory.length === 0 ? (
+                    <div className="p-4 text-center text-sm text-muted-foreground">
+                      No search history
+                    </div>
+                  ) : (
+                    <div className="max-h-60 overflow-y-auto">
+                      {searchHistory.map((item) => (
+                        <DropdownMenuItem
+                          key={item.id}
+                          onClick={() => loadFromHistory(item)}
+                          className="flex flex-col items-start p-3 cursor-pointer"
+                        >
+                          <div className="text-sm font-medium truncate w-full">{item.query}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {item.timestamp.toLocaleString()}
+                          </div>
+                        </DropdownMenuItem>
+                      ))}
+                    </div>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
 
-            {/* Error message and retry */}
-            {searchError && (
-              <div className="flex items-center justify-between p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-destructive" />
-                  <span className="text-sm text-destructive">{searchError}</span>
-                </div>
-                {retryCount < 3 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRetry}
-                    disabled={isSearching}
-                    className="text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
-                  >
-                    <RefreshCw className="w-3 h-3 mr-1" />
-                    重试 ({retryCount}/3)
-                  </Button>
-                )}
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">试试这些示例查询：</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {sampleQueries.map((sampleQuery, index) => (
-                  <Button
-                    key={index}
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleSampleQuery(sampleQuery)}
-                    className="text-xs text-left h-auto py-2 px-3 whitespace-normal leading-relaxed"
-                  >
-                    {sampleQuery}
-                  </Button>
-                ))}
-              </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="text-sm text-muted-foreground">示例查询：</span>
+              {sampleQueries.map((sample, index) => (
+                <Button
+                  key={index}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => useSampleQuery(sample)}
+                  className="text-xs h-7"
+                  disabled={isSearching}
+                >
+                  示例 {index + 1}
+                </Button>
+              ))}
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* 结果区域 */}
-      {isSearching && (
-        <div className="space-y-4">
-          <div className="text-center py-12">
-            <RefreshCw className="w-8 h-8 mx-auto mb-4 animate-spin text-primary" />
-            <p className="text-lg font-medium">正在搜索相关文献...</p>
-            <p className="text-sm text-muted-foreground mt-2">这可能需要几秒钟时间</p>
-          </div>
-        </div>
+      {searchError && (
+        <Card className="border-destructive">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-destructive" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-destructive">Search Error</p>
+                <p className="text-sm text-muted-foreground">{searchError}</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={handleRetry} disabled={isSearching}>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Retry ({3 - retryCount} left)
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
-      {hasSearched && !isSearching && (
-        <div className="space-y-4">
-          {currentResults.api1.length === 0 && currentResults.api2.length === 0 ? (
+      {hasSearched && !searchError && (
+        <div className="space-y-6">
+          {isSearching ? (
             <div className="text-center py-12">
-              <Search className="w-8 h-8 mx-auto mb-4 text-muted-foreground" />
-              <p className="text-lg font-medium">未找到相关文献</p>
-              <p className="text-sm text-muted-foreground mt-2">请尝试使用不同的关键词或调整查询内容</p>
+              <RefreshCw className="w-8 h-8 mx-auto mb-4 animate-spin text-primary" />
+              <p className="text-lg font-medium">正在搜索相关文献...</p>
+              <p className="text-sm text-muted-foreground mt-2">这可能需要几秒钟时间</p>
             </div>
           ) : (
             <>
-              <div className="text-sm text-muted-foreground">
-                为查询内容找到相关文献，按句子展示溯源结果
-              </div>
-
               <Tabs defaultValue="api1" className="w-full">
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="api1">
-                    接口一结果 ({currentResults.api1.reduce((acc, result) => acc + result.literature.length, 0)} 篇文献)
+                    接口一 ({currentResults.api1.reduce((acc, result) => acc + result.literature.length, 0)} 篇文献)
                   </TabsTrigger>
                   <TabsTrigger value="api2">
-                    接口二结果 ({currentResults.api2.reduce((acc, result) => acc + result.literature.length, 0)} 篇文献)
+                    接口二 ({currentResults.api2.reduce((acc, result) => acc + result.literature.length, 0)} 篇文献)
                   </TabsTrigger>
                 </TabsList>
 
