@@ -142,7 +142,7 @@ export function LiteratureTracer() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query: query.trim() }),
+        body: JSON.stringify({ text: query.trim() }),
       })
 
       console.log('API response status:', response.status)

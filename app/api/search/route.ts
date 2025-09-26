@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { ExaService, type ExaResult } from "@/lib/exaService"
 import { CrossrefService } from "@/lib/crossrefService"
+import { DeduplicationService } from "@/lib/deduplicationService"
 
 // Define types matching frontend interface
 const LiteratureSchema = z.object({
@@ -150,9 +151,21 @@ export async function POST(request: NextRequest) {
     
     // Split text into sentences
     const splitIntoSentences = (text: string): string[] => {
-      const matches = text.match(/[^。.!?！？;；\n]+[。.!?！？;；]?/g)
+      // First normalize line breaks and multiple spaces
+      const normalized = text.replace(/\r\n/g, '\n').replace(/\s+/g, ' ').trim()
+      
+      // Split by sentence endings, semicolons, and line breaks, preserving the punctuation
+      const matches = normalized.match(/[^。.!?！？;；\n]+[。.!?！？;；\n]?/g)
       if (!matches) return []
-      return matches.map((s) => s.trim()).filter((s) => s.length > 0)
+      
+      return matches
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+        .map((s) => {
+          // Clean up trailing punctuation for better processing while preserving original
+          return s.replace(/[;；\n]+$/, '').trim() || s
+        })
+        .filter((s) => s.length > 3) // Filter out very short segments
     }
     
     const sentences = splitIntoSentences(validatedRequest.text)
@@ -183,14 +196,28 @@ export async function POST(request: NextRequest) {
         includeSummary: true,
       })
 
-      // Search with Crossref for each sentence concurrently
-      const crossrefPromises = sentences.map(sentence => 
-        crossrefService.searchByBibliographic(sentence, 2)
-          .catch(error => {
-            console.error(`Crossref search failed for sentence: "${sentence}"`, error)
-            return []
-          })
-      )
+      // Search with Crossref for each sentence using dual approach
+      const crossrefPromises = sentences.map(async (sentence) => {
+        try {
+          // First approach: bibliographic search (general query)
+          const bibliographicResults = await crossrefService.searchByBibliographic(sentence, 3)
+          
+          // Second approach: title-based search (extract potential titles from sentence)
+          const titleResults = await crossrefService.searchByTitle(sentence, 2)
+          
+          // Combine and deduplicate results from both approaches
+          const combinedResults = [...bibliographicResults, ...titleResults]
+          const deduplicatedResults = DeduplicationService.deduplicate(
+            combinedResults.map((work, index) => convertCrossrefToLiterature(work, index))
+          )
+          
+          // Return top 3 results after deduplication
+          return deduplicatedResults.slice(0, 3)
+        } catch (error) {
+          console.error(`Crossref dual search failed for sentence: "${sentence}"`, error)
+          return []
+        }
+      })
       const crossrefResults = await Promise.all(crossrefPromises)
 
       // Convert Exa results to our Literature format for API 1
@@ -198,26 +225,34 @@ export async function POST(request: NextRequest) {
       const api1Results: SentenceResult[] = sentences.map((sentence, index) => {
         const exaResultsForSentence = exaResults[index] || []
         const literature = exaResultsForSentence
-          .slice(0, 2) // Take first 2 results for API 1
+          .slice(0, 3) // Take first 3 results before deduplication
           .map(exaResult => convertExaResultToLiterature(exaResult, literatureId++))
+        
+        // Apply deduplication and sorting
+        const deduplicatedLiterature = DeduplicationService.sortByRelevanceAndQuality(
+          DeduplicationService.deduplicate(literature)
+        ).slice(0, 2) // Keep top 2 after deduplication
         
         return {
           sentence,
           sentenceIndex: index + 1,
-          literature,
+          literature: deduplicatedLiterature,
         }
       })
 
       // Convert Crossref results to our Literature format for API 2
       const api2Results: SentenceResult[] = sentences.map((sentence, index) => {
         const crossrefResultsForSentence = crossrefResults[index] || []
+        // Results are already converted and deduplicated in the search phase
         const literature = crossrefResultsForSentence
-          .map(crossrefWork => convertCrossrefToLiterature(crossrefWork, literatureId++))
+        
+        // Apply final sorting for Crossref results
+        const sortedLiterature = DeduplicationService.sortByRelevanceAndQuality(literature)
         
         return {
           sentence,
           sentenceIndex: index + 1,
-          literature,
+          literature: sortedLiterature,
         }
       })
 
