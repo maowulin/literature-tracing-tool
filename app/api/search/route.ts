@@ -33,7 +33,7 @@ const SearchResponseSchema = z.object({
   api2: z.array(SentenceResultSchema),
 })
 
-type Literature = z.infer<typeof LiteratureSchema>
+export type Literature = z.infer<typeof LiteratureSchema>
 type SentenceResult = z.infer<typeof SentenceResultSchema>
 type SearchRequest = z.infer<typeof SearchRequestSchema>
 
@@ -66,6 +66,23 @@ const mockLiteratureData: Literature[] = [
   },
 ]
 
+// Helper function to convert Crossref results to Literature format
+function convertCrossrefToLiterature(crossrefWork: any, id: number): Literature {
+  const crossrefService = new CrossrefService()
+  
+  return {
+    id,
+    title: crossrefService.extractTitle(crossrefWork),
+    authors: crossrefService.formatAuthors(crossrefWork.author),
+    journal: crossrefService.extractJournal(crossrefWork),
+    year: crossrefService.extractYear(crossrefWork),
+    doi: crossrefWork.DOI || 'N/A',
+    verified: true, // Crossref results are verified
+    abstract: crossrefWork.abstract || undefined,
+    citationCount: crossrefWork['is-referenced-by-count'] || undefined,
+  }
+}
+
 // Helper function to convert Exa results to Literature format
 function convertExaResultToLiterature(exaResult: ExaResult, id: number): Literature {
   // Extract year from publishedDate if available
@@ -94,7 +111,7 @@ function convertExaResultToLiterature(exaResult: ExaResult, id: number): Literat
     year,
     doi,
     verified: false, // Exa results are not Crossref verified yet
-    abstract: exaResult.text || exaResult.summary,
+    abstract: exaResult.text,
     supportingPages: exaResult.highlights?.length || 1,
   }
 }
@@ -143,24 +160,40 @@ export async function POST(request: NextRequest) {
     // Initialize Exa service
     const exaApiKey = process.env.EXA_API_KEY
     if (!exaApiKey) {
-      console.warn("EXA_API_KEY not found, falling back to mock data")
+      console.log("EXA_API_KEY not found, using mock data")
       return await fallbackToMockData(sentences)
     }
 
+    if (sentences.length === 0) {
+      return NextResponse.json({ api1: [], api2: [] })
+    }
+
+    // Initialize services
     const exaService = new ExaService(exaApiKey)
+    const crossrefService = new CrossrefService()
     
     try {
       // Search with Exa for each sentence concurrently
       const exaResults = await exaService.searchMultipleQueries(sentences, {
         type: "neural",
-        category: "research_paper",
+        category: "research paper",
         numResults: 3,
-        text: { maxCharacters: 500 },
-        highlights: { numSentences: 2 },
-        summary: { query: "What is the main contribution and findings?" },
+        includeText: true,
+        includeHighlights: true,
+        includeSummary: true,
       })
 
-      // Convert Exa results to our Literature format
+      // Search with Crossref for each sentence concurrently
+      const crossrefPromises = sentences.map(sentence => 
+        crossrefService.searchByBibliographic(sentence, 2)
+          .catch(error => {
+            console.error(`Crossref search failed for sentence: "${sentence}"`, error)
+            return []
+          })
+      )
+      const crossrefResults = await Promise.all(crossrefPromises)
+
+      // Convert Exa results to our Literature format for API 1
       let literatureId = 1
       const api1Results: SentenceResult[] = sentences.map((sentence, index) => {
         const exaResultsForSentence = exaResults[index] || []
@@ -175,11 +208,11 @@ export async function POST(request: NextRequest) {
         }
       })
 
+      // Convert Crossref results to our Literature format for API 2
       const api2Results: SentenceResult[] = sentences.map((sentence, index) => {
-        const exaResultsForSentence = exaResults[index] || []
-        const literature = exaResultsForSentence
-          .slice(1, 3) // Take results 2-3 for API 2 (different subset)
-          .map(exaResult => convertExaResultToLiterature(exaResult, literatureId++))
+        const crossrefResultsForSentence = crossrefResults[index] || []
+        const literature = crossrefResultsForSentence
+          .map(crossrefWork => convertCrossrefToLiterature(crossrefWork, literatureId++))
         
         return {
           sentence,

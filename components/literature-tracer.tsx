@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { Search, ExternalLink, Copy, ChevronDown, Users, BookOpen, Calendar, Info } from "lucide-react"
+import { useState, useEffect } from "react"
+import { Search, ExternalLink, Copy, ChevronDown, Users, BookOpen, Calendar, Info, AlertCircle, RefreshCw, History, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -9,25 +9,13 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useToast } from "@/components/ui/use-toast"
-
-interface Literature {
-  id: number
-  title: string
-  authors: string[]
-  journal: string
-  year: number
-  doi: string
-  verified: boolean
-  supportingPages?: number
-  abstract?: string
-  impactFactor?: number
-  citationCount?: number
-}
+import { CitationFormatter } from "@/lib/citationFormatter"
+import { Literature as LiteratureType } from "@/app/api/search/route"
 
 interface SentenceResult {
   sentence: string
   sentenceIndex: number
-  literature: Literature[]
+  literature: LiteratureType[]
 }
 
 const sampleQueries = [
@@ -37,208 +25,6 @@ const sampleQueries = [
   "量子计算为优化问题提供了新的解决方案。量子算法在某些计算任务上具有指数级优势。",
   "CRISPR基因编辑技术在治疗应用中显示出巨大潜力。基因治疗为遗传疾病提供了新的治疗途径。",
 ]
-
-const mockSentenceData: { [key: string]: { api1: SentenceResult[]; api2: SentenceResult[] } } = {
-  uterine: {
-    api1: [
-      {
-        sentence: "子宫疤痕会影响胎盘。",
-        sentenceIndex: 1,
-        literature: [
-          {
-            id: 1,
-            title: "Longitudinal changes in uterine artery Doppler and blood pressure and risk of pre-eclampsia",
-            authors: ["A. Khalil", "R. Garcia-Mandujano", "N. Maiz", "and 5 other authors"],
-            journal: "Ultrasound in Obstetrics & Gynecology",
-            year: 2014,
-            doi: "10.1002/uog.13257",
-            verified: true,
-            supportingPages: 2,
-            impactFactor: 6.194,
-            citationCount: 342,
-            abstract:
-              "Background: Uterine artery Doppler screening is used to identify pregnancies at risk of pre-eclampsia. This study aimed to investigate longitudinal changes in uterine artery pulsatility index (PI) and mean arterial pressure (MAP) throughout pregnancy and their association with the development of pre-eclampsia. Methods: A prospective longitudinal study was conducted in 1000 singleton pregnancies. Results showed significant correlations between early uterine artery changes and subsequent pre-eclampsia development.",
-          },
-          {
-            id: 2,
-            title: "<scp>FIGO</scp> classification for the clinical diagnosis of placenta accreta spectrum disorders",
-            authors: ["Eric Jauniaux", "Diogo Ayres-de-Campos", "Jens Langhoff-Roos", "and 5 other authors"],
-            journal: "International Journal of Gynecology & Obstetrics",
-            year: 2019,
-            doi: "10.1002/ijgo.12761",
-            verified: true,
-            impactFactor: 3.286,
-            citationCount: 156,
-            // 这个文献没有摘要
-          },
-        ],
-      },
-      {
-        sentence: "子宫疤痕可能导致罕见但严重的并发症，如剖宫产疤痕异位妊娠，涉及胎盘异常生长和出血风险。",
-        sentenceIndex: 2,
-        literature: [
-          {
-            id: 3,
-            title: "Maternal and perinatal outcomes in pregnancies complicated by uterine scars: A systematic review",
-            authors: ["M. Johnson", "K. Smith", "L. Brown", "and 3 other authors"],
-            journal: "American Journal of Obstetrics and Gynecology",
-            year: 2020,
-            doi: "10.1016/j.ajog.2020.03.015",
-            verified: false,
-            impactFactor: 9.256,
-            citationCount: 89,
-            abstract:
-              "Objective: To systematically review maternal and perinatal outcomes in pregnancies complicated by uterine scars from previous cesarean deliveries. Study Design: We searched multiple databases for studies comparing outcomes between scarred and unscarred uteri. Results: Uterine scars were associated with increased risks of placental abnormalities, uterine rupture, and adverse perinatal outcomes. The risk of cesarean scar pregnancy was found to be 1 in 2000 pregnancies with previous cesarean delivery.",
-          },
-          {
-            id: 4,
-            title: "Cesarean scar pregnancy: diagnosis and management",
-            authors: ["L. Zhang", "H. Wang", "M. Liu", "and 4 other authors"],
-            journal: "Obstetrics & Gynecology",
-            year: 2021,
-            doi: "10.1097/AOG.0000000000004321",
-            verified: true,
-            supportingPages: 3,
-            impactFactor: 7.661,
-            citationCount: 234,
-            abstract:
-              "Cesarean scar pregnancy (CSP) is a rare form of ectopic pregnancy where the gestational sac implants in the myometrium at the site of a previous cesarean scar. Early diagnosis and appropriate management are crucial to prevent life-threatening complications such as uterine rupture and massive hemorrhage. This review discusses current diagnostic criteria, imaging findings, and treatment options including medical management with methotrexate and surgical interventions.",
-          },
-        ],
-      },
-    ],
-    api2: [
-      {
-        sentence: "子宫疤痕会影响胎盘。",
-        sentenceIndex: 1,
-        literature: [
-          {
-            id: 5,
-            title: "Risk factors and outcomes of uterine scar dehiscence during pregnancy and delivery",
-            authors: ["S. Williams", "T. Davis", "R. Wilson", "and 4 other authors"],
-            journal: "Obstetrics & Gynecology",
-            year: 2021,
-            doi: "10.1097/AOG.0000000000004321",
-            verified: true,
-            supportingPages: 3,
-            impactFactor: 7.661,
-            citationCount: 178,
-            abstract:
-              "Background: Uterine scar dehiscence is a serious complication that can occur during pregnancy and labor in women with previous cesarean deliveries. This study examined risk factors and maternal-fetal outcomes associated with scar dehiscence. Methods: A retrospective cohort study of 5,000 women with previous cesarean delivery. Results: Scar dehiscence occurred in 0.7% of cases, with increased risks associated with short interpregnancy intervals and multiple previous cesareans.",
-          },
-        ],
-      },
-      {
-        sentence: "子宫疤痕可能导致罕见但严重的并发症，如剖宫产疤痕异位妊娠，涉及胎盘异常生长和出血风险。",
-        sentenceIndex: 2,
-        literature: [
-          {
-            id: 6,
-            title: "Placental implantation abnormalities and uterine scarring: A comprehensive analysis",
-            authors: ["H. Chen", "Y. Zhang", "L. Wang", "and 6 other authors"],
-            journal: "Placenta",
-            year: 2022,
-            doi: "10.1016/j.placenta.2022.04.008",
-            verified: true,
-            impactFactor: 3.287,
-            citationCount: 67,
-            // 这个文献没有摘要
-          },
-        ],
-      },
-    ],
-  },
-  "machine learning": {
-    api1: [
-      {
-        sentence: "机器学习在医学诊断中的应用越来越广泛。",
-        sentenceIndex: 1,
-        literature: [
-          {
-            id: 7,
-            title: "Deep learning approaches for automated medical image analysis",
-            authors: ["X. Liu", "A. Kumar", "S. Patel", "and 8 other authors"],
-            journal: "Nature Medicine",
-            year: 2023,
-            doi: "10.1038/s41591-023-02156-7",
-            verified: true,
-            supportingPages: 5,
-            impactFactor: 87.241,
-            citationCount: 1247,
-            abstract:
-              "The application of deep learning in medical image analysis has revolutionized diagnostic capabilities across multiple medical specialties. This comprehensive review examines recent advances in convolutional neural networks, transformer architectures, and multimodal learning approaches for medical imaging. We analyze performance metrics across radiology, pathology, and ophthalmology applications, demonstrating significant improvements in diagnostic accuracy and efficiency compared to traditional methods.",
-          },
-        ],
-      },
-      {
-        sentence: "深度学习算法可以自动分析医学图像。",
-        sentenceIndex: 2,
-        literature: [
-          {
-            id: 8,
-            title: "Machine learning algorithms for early disease detection: A systematic review",
-            authors: ["R. Singh", "M. Wang", "L. Garcia", "and 6 other authors"],
-            journal: "The Lancet Digital Health",
-            year: 2022,
-            doi: "10.1016/S2589-7500(22)00089-3",
-            verified: true,
-            impactFactor: 36.615,
-            citationCount: 892,
-            abstract:
-              "Early disease detection is crucial for improving patient outcomes and reducing healthcare costs. This systematic review evaluates machine learning algorithms used for early detection across various diseases including cancer, cardiovascular disease, and neurological disorders. We analyzed 150 studies and found that ensemble methods and deep learning approaches showed the highest sensitivity and specificity for early-stage disease identification.",
-          },
-        ],
-      },
-      {
-        sentence: "人工智能系统能够辅助临床决策。",
-        sentenceIndex: 3,
-        literature: [
-          {
-            id: 9,
-            title: "Artificial intelligence in clinical decision support systems",
-            authors: ["K. Brown", "T. Wilson", "H. Kim", "and 4 other authors"],
-            journal: "Journal of Medical Internet Research",
-            year: 2023,
-            doi: "10.2196/45123",
-            verified: true,
-            supportingPages: 3,
-            impactFactor: 7.076,
-            citationCount: 445,
-            // 这个文献没有摘要
-          },
-        ],
-      },
-    ],
-    api2: [
-      {
-        sentence: "机器学习在医学诊断中的应用越来越广泛。",
-        sentenceIndex: 1,
-        literature: [
-          {
-            id: 10,
-            title: "AI-powered diagnostic tools in healthcare: Current applications and future prospects",
-            authors: ["M. Thompson", "J. Lee", "S. Park", "and 5 other authors"],
-            journal: "Nature Digital Medicine",
-            year: 2023,
-            doi: "10.1038/s41746-023-00789-1",
-            verified: true,
-            impactFactor: 12.329,
-            citationCount: 623,
-            abstract:
-              "Artificial intelligence is transforming healthcare delivery through advanced diagnostic tools and predictive analytics. This review examines current AI applications in clinical practice, including image recognition systems, natural language processing for electronic health records, and predictive models for patient risk stratification. We discuss implementation challenges, regulatory considerations, and future directions for AI integration in healthcare systems.",
-          },
-        ],
-      },
-    ],
-  },
-}
-
-const splitIntoSentences = (text: string): string[] => {
-  // Keep original punctuation; support Chinese/English period, question, exclamation, semicolon; handle newlines
-  const matches = text.match(/[^。.!?！？;；\n]+[。.!?！？;；]?/g)
-  if (!matches) return []
-  return matches.map((s) => s.trim()).filter((s) => s.length > 0)
-}
 
 const decodeHtmlEntities = (s: string): string => {
   return s
@@ -258,6 +44,8 @@ export function LiteratureTracer() {
   const [query, setQuery] = useState("")
   const [isSearching, setIsSearching] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const [retryCount, setRetryCount] = useState(0)
   const [currentResults, setCurrentResults] = useState<{ api1: SentenceResult[]; api2: SentenceResult[] }>({
     api1: [],
     api2: [],
@@ -266,33 +54,76 @@ export function LiteratureTracer() {
 
   const handleSampleQuery = (sampleQuery: string) => {
     setQuery(sampleQuery)
+    setSearchError(null)
   }
 
-  const handleSearch = async () => {
+  const handleSearch = async (isRetry = false) => {
     if (!query.trim()) return
 
     setIsSearching(true)
+    setSearchError(null)
+    
+    if (!isRetry) {
+      setRetryCount(0)
+    }
 
     try {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+
       const response = await fetch('/api/search', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ text: query.trim() }),
+        signal: controller.signal,
       })
 
+      clearTimeout(timeoutId)
+
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorText = await response.text()
+        throw new Error(`Search failed: ${response.status} ${response.statusText}. ${errorText}`)
       }
 
       const data = await response.json()
+      
+      if (!data || (!data.api1 && !data.api2)) {
+        throw new Error('Invalid response format from search API')
+      }
+
       setCurrentResults(data)
       setHasSearched(true)
+      setSearchError(null)
+      setRetryCount(0)
+      
+      toast({ 
+        description: "搜索完成！找到相关文献", 
+        variant: "default" 
+      })
     } catch (error) {
       console.error('Search failed:', error)
+      
+      let errorMessage = "搜索失败，请稍后重试"
+      
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          errorMessage = "搜索超时，请检查网络连接后重试"
+        } else if (error.message.includes('Failed to fetch')) {
+          errorMessage = "网络连接失败，请检查网络后重试"
+        } else if (error.message.includes('500')) {
+          errorMessage = "服务器内部错误，请稍后重试"
+        } else if (error.message.includes('429')) {
+          errorMessage = "请求过于频繁，请稍后重试"
+        }
+      }
+      
+      setSearchError(errorMessage)
+      setRetryCount(prev => prev + 1)
+      
       toast({ 
-        description: "搜索失败，请稍后重试", 
+        description: errorMessage, 
         variant: "destructive" 
       })
     } finally {
@@ -300,12 +131,16 @@ export function LiteratureTracer() {
     }
   }
 
+  const handleRetry = () => {
+    handleSearch(true)
+  }
+
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text)
     toast({ description: `${label} copied` })
   }
 
-  const LiteratureCard = ({ literature, index }: { literature: Literature; index: number }) => (
+  const LiteratureCard = ({ literature, index }: { literature: LiteratureType; index: number }) => (
     <Card className="mb-4 border border-border">
       <CardContent className="p-6">
         <div className="flex items-start gap-4">
@@ -410,12 +245,22 @@ export function LiteratureTracer() {
                     <DropdownMenuItem
                       onClick={() =>
                         copyToClipboard(
-                          `${literature.authors[0]} et al. (${literature.year}). ${cleanTitle(literature.title)}. ${literature.journal}.`,
-                          "Citation",
+                          CitationFormatter.formatAPA(literature),
+                          "APA Citation",
                         )
                       }
                     >
-                      Copy Citation
+                      Copy Citation (APA)
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        copyToClipboard(
+                          CitationFormatter.formatIEEE(literature),
+                          "IEEE Citation",
+                        )
+                      }
+                    >
+                      Copy Citation (IEEE)
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -464,14 +309,43 @@ export function LiteratureTracer() {
                   placeholder="输入要查询的文本内容（支持多句话）..."
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                  onKeyDown={(e) => e.key === "Enter" && !isSearching && handleSearch()}
                   className="pl-10 h-12 text-base"
                 />
               </div>
-              <Button onClick={handleSearch} disabled={isSearching || !query.trim()} className="h-12 px-6">
-                {isSearching ? "搜索中..." : "搜索文献"}
+              <Button onClick={() => handleSearch()} disabled={isSearching || !query.trim()} className="h-12 px-6">
+                {isSearching ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                    搜索中...
+                  </>
+                ) : (
+                  "搜索文献"
+                )}
               </Button>
             </div>
+
+            {/* Error message and retry */}
+            {searchError && (
+              <div className="flex items-center justify-between p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-destructive" />
+                  <span className="text-sm text-destructive">{searchError}</span>
+                </div>
+                {retryCount < 3 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRetry}
+                    disabled={isSearching}
+                    className="text-destructive border-destructive hover:bg-destructive hover:text-destructive-foreground"
+                  >
+                    <RefreshCw className="w-3 h-3 mr-1" />
+                    重试 ({retryCount}/3)
+                  </Button>
+                )}
+              </div>
+            )}
 
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">试试这些示例查询：</p>
@@ -494,36 +368,74 @@ export function LiteratureTracer() {
       </Card>
 
       {/* 结果区域 */}
-      {hasSearched && (
+      {isSearching && (
         <div className="space-y-4">
-          <div className="text-sm text-muted-foreground">为查询内容找到相关文献，按句子展示溯源结果</div>
-
-          <Tabs defaultValue="api1" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="api1">接口一结果</TabsTrigger>
-              <TabsTrigger value="api2">接口二结果</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="api1" className="mt-6">
-              <div className="space-y-6">
-                {currentResults.api1.map((sentenceResult, index) => (
-                  <SentenceResultSection key={index} sentenceResult={sentenceResult} />
-                ))}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="api2" className="mt-6">
-              <div className="space-y-6">
-                {currentResults.api2.map((sentenceResult, index) => (
-                  <SentenceResultSection key={index} sentenceResult={sentenceResult} />
-                ))}
-              </div>
-            </TabsContent>
-          </Tabs>
+          <div className="text-center py-12">
+            <RefreshCw className="w-8 h-8 mx-auto mb-4 animate-spin text-primary" />
+            <p className="text-lg font-medium">正在搜索相关文献...</p>
+            <p className="text-sm text-muted-foreground mt-2">这可能需要几秒钟时间</p>
+          </div>
         </div>
       )}
 
-      {!hasSearched && (
+      {hasSearched && !isSearching && (
+        <div className="space-y-4">
+          {currentResults.api1.length === 0 && currentResults.api2.length === 0 ? (
+            <div className="text-center py-12">
+              <Search className="w-8 h-8 mx-auto mb-4 text-muted-foreground" />
+              <p className="text-lg font-medium">未找到相关文献</p>
+              <p className="text-sm text-muted-foreground mt-2">请尝试使用不同的关键词或调整查询内容</p>
+            </div>
+          ) : (
+            <>
+              <div className="text-sm text-muted-foreground">
+                为查询内容找到相关文献，按句子展示溯源结果
+              </div>
+
+              <Tabs defaultValue="api1" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="api1">
+                    接口一结果 ({currentResults.api1.reduce((acc, result) => acc + result.literature.length, 0)} 篇文献)
+                  </TabsTrigger>
+                  <TabsTrigger value="api2">
+                    接口二结果 ({currentResults.api2.reduce((acc, result) => acc + result.literature.length, 0)} 篇文献)
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="api1" className="mt-6">
+                  <div className="space-y-6">
+                    {currentResults.api1.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <p>接口一暂无结果</p>
+                      </div>
+                    ) : (
+                      currentResults.api1.map((sentenceResult, index) => (
+                        <SentenceResultSection key={index} sentenceResult={sentenceResult} />
+                      ))
+                    )}
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="api2" className="mt-6">
+                  <div className="space-y-6">
+                    {currentResults.api2.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <p>接口二暂无结果</p>
+                      </div>
+                    ) : (
+                      currentResults.api2.map((sentenceResult, index) => (
+                        <SentenceResultSection key={index} sentenceResult={sentenceResult} />
+                      ))
+                    )}
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </>
+          )}
+        </div>
+      )}
+
+      {!hasSearched && !isSearching && (
         <div className="text-center py-12 text-muted-foreground">
           <Search className="w-12 h-12 mx-auto mb-4 opacity-50" />
           <p>输入文本内容开始文献溯源</p>
