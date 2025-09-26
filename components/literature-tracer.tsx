@@ -1,13 +1,14 @@
 "use client"
 
 import { useState } from "react"
-import { Search, ExternalLink, Copy, ChevronDown } from "lucide-react"
+import { Search, ExternalLink, Copy, ChevronDown, Users, BookOpen, Calendar, Info } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { useToast } from "@/components/ui/use-toast"
 
 interface Literature {
   id: number
@@ -233,11 +234,24 @@ const mockSentenceData: { [key: string]: { api1: SentenceResult[]; api2: Sentenc
 }
 
 const splitIntoSentences = (text: string): string[] => {
-  // 按中文句号、英文句号、问号、感叹号分割
-  return text
-    .split(/[。.!?！？]/)
-    .filter((sentence) => sentence.trim().length > 0)
-    .map((s) => s.trim() + (s.match(/[。.!?！？]/) ? "" : "。"))
+  // Keep original punctuation; support Chinese/English period, question, exclamation, semicolon; handle newlines
+  const matches = text.match(/[^。.!?！？;；\n]+[。.!?！？;；]?/g)
+  if (!matches) return []
+  return matches.map((s) => s.trim()).filter((s) => s.length > 0)
+}
+
+const decodeHtmlEntities = (s: string): string => {
+  return s
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+}
+
+const cleanTitle = (raw: string): string => {
+  const stripped = raw.replace(/<[^>]+>/g, "")
+  return decodeHtmlEntities(stripped)
 }
 
 export function LiteratureTracer() {
@@ -248,6 +262,7 @@ export function LiteratureTracer() {
     api1: [],
     api2: [],
   })
+  const { toast } = useToast()
 
   const handleSampleQuery = (sampleQuery: string) => {
     setQuery(sampleQuery)
@@ -258,30 +273,36 @@ export function LiteratureTracer() {
 
     setIsSearching(true)
 
-    const queryLower = query.toLowerCase()
-    let selectedDataSet = mockSentenceData["uterine"] // 默认数据
+    try {
+      const response = await fetch('/api/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text: query.trim() }),
+      })
 
-    if (
-      queryLower.includes("机器学习") ||
-      queryLower.includes("machine learning") ||
-      queryLower.includes("人工智能") ||
-      queryLower.includes("深度学习")
-    ) {
-      selectedDataSet = mockSentenceData["machine learning"]
-    } else if (queryLower.includes("子宫") || queryLower.includes("胎盘") || queryLower.includes("uterine")) {
-      selectedDataSet = mockSentenceData["uterine"]
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data = await response.json()
+      setCurrentResults(data)
+      setHasSearched(true)
+    } catch (error) {
+      console.error('Search failed:', error)
+      toast({ 
+        description: "搜索失败，请稍后重试", 
+        variant: "destructive" 
+      })
+    } finally {
+      setIsSearching(false)
     }
-
-    setCurrentResults(selectedDataSet)
-
-    // 模拟API调用
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    setIsSearching(false)
-    setHasSearched(true)
   }
 
-  const copyToClipboard = (text: string) => {
+  const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text)
+    toast({ description: `${label} copied` })
   }
 
   const LiteratureCard = ({ literature, index }: { literature: Literature; index: number }) => (
@@ -290,7 +311,7 @@ export function LiteratureTracer() {
         <div className="flex items-start gap-4">
           <div className="flex-shrink-0">
             <div className="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-medium">
-              {index + 2}
+              {index + 1}
             </div>
           </div>
 
@@ -301,21 +322,21 @@ export function LiteratureTracer() {
               )}
             </div>
 
-            <h4 className="text-base font-medium text-foreground leading-relaxed">{literature.title}</h4>
+            <h4 className="text-base font-medium text-foreground leading-relaxed">{cleanTitle(literature.title)}</h4>
 
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span>👥</span>
+                <Users className="w-4 h-4" />
                 <span>{literature.authors.join(", ")}</span>
               </div>
 
               <div className="flex items-center gap-4 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
-                  <span>📖</span>
+                  <BookOpen className="w-4 h-4" />
                   <span>{literature.journal}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span>📅</span>
+                  <Calendar className="w-4 h-4" />
                   <span>{literature.year}</span>
                 </div>
               </div>
@@ -344,8 +365,9 @@ export function LiteratureTracer() {
             )}
 
             <div className="bg-warning/10 border-l-4 border-warning p-3 rounded-r">
-              <p className="text-sm text-warning-foreground">
-                📋 温馨提示：请点击DOI链接查看完整文献，选择最合适的论文进行引用
+              <p className="text-sm text-warning-foreground flex items-center gap-2">
+                <Info className="w-4 h-4" />
+                <span>温馨提示：请点击 DOI 链接查看完整文献，选择最合适的论文进行引用</span>
               </p>
             </div>
 
@@ -355,7 +377,12 @@ export function LiteratureTracer() {
               </div>
 
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" className="gap-2 bg-transparent">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 bg-transparent"
+                  onClick={() => window.open(`https://doi.org/${literature.doi}`, "_blank", "noopener,noreferrer")}
+                >
                   <ExternalLink className="w-4 h-4" />
                   Access
                 </Button>
@@ -369,17 +396,22 @@ export function LiteratureTracer() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => copyToClipboard(literature.title)}>Copy Title</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => copyToClipboard(literature.doi)}>Copy DOI</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => copyToClipboard(cleanTitle(literature.title), "Title")}>
+                      Copy Title
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => copyToClipboard(literature.doi, "DOI")}>
+                      Copy DOI
+                    </DropdownMenuItem>
                     {literature.abstract && (
-                      <DropdownMenuItem onClick={() => copyToClipboard(literature.abstract)}>
+                      <DropdownMenuItem onClick={() => copyToClipboard(literature.abstract ?? "", "Abstract")}>
                         Copy Abstract
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuItem
                       onClick={() =>
                         copyToClipboard(
-                          `${literature.authors[0]} et al. (${literature.year}). ${literature.title}. ${literature.journal}.`,
+                          `${literature.authors[0]} et al. (${literature.year}). ${cleanTitle(literature.title)}. ${literature.journal}.`,
+                          "Citation",
                         )
                       }
                     >
@@ -432,7 +464,7 @@ export function LiteratureTracer() {
                   placeholder="输入要查询的文本内容（支持多句话）..."
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  onKeyPress={(e) => e.key === "Enter" && handleSearch()}
+                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                   className="pl-10 h-12 text-base"
                 />
               </div>
@@ -443,14 +475,14 @@ export function LiteratureTracer() {
 
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">试试这些示例查询：</p>
-              <div className="flex flex-wrap gap-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {sampleQueries.map((sampleQuery, index) => (
                   <Button
                     key={index}
                     variant="outline"
                     size="sm"
                     onClick={() => handleSampleQuery(sampleQuery)}
-                    className="text-xs max-w-xs truncate"
+                    className="text-xs text-left h-auto py-2 px-3 whitespace-normal leading-relaxed"
                   >
                     {sampleQuery}
                   </Button>
