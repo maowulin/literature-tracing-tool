@@ -3,6 +3,7 @@ import { z } from "zod"
 import { ExaService, type ExaResult } from "@/lib/exaService"
 import { CrossrefService } from "@/lib/crossrefService"
 import { DeduplicationService } from "@/lib/deduplicationService"
+import { evaluationService, type LiteratureEvaluation } from "@/lib/evaluationService"
 
 // Define types matching frontend interface
 const LiteratureSchema = z.object({
@@ -17,6 +18,16 @@ const LiteratureSchema = z.object({
   abstract: z.string().optional(),
   impactFactor: z.number().optional(),
   citationCount: z.number().optional(),
+  // Evaluation fields
+  evaluation: z.object({
+    relevanceScore: z.number().min(0).max(10),
+    credibilityScore: z.number().min(0).max(10),
+    impactScore: z.number().min(0).max(10),
+    overallScore: z.number().min(0).max(10),
+    reasoning: z.string(),
+    strengths: z.array(z.string()),
+    limitations: z.array(z.string())
+  }).optional(),
 })
 
 const SentenceResultSchema = z.object({
@@ -222,39 +233,91 @@ export async function POST(request: NextRequest) {
 
       // Convert Exa results to our Literature format for API 1
       let literatureId = 1
-      const api1Results: SentenceResult[] = sentences.map((sentence, index) => {
-        const exaResultsForSentence = exaResults[index] || []
-        const literature = exaResultsForSentence
-          .slice(0, 3) // Take first 3 results before deduplication
-          .map(exaResult => convertExaResultToLiterature(exaResult, literatureId++))
-        
-        // Apply deduplication and sorting
-        const deduplicatedLiterature = DeduplicationService.sortByRelevanceAndQuality(
-          DeduplicationService.deduplicate(literature)
-        ).slice(0, 2) // Keep top 2 after deduplication
-        
-        return {
-          sentence,
-          sentenceIndex: index + 1,
-          literature: deduplicatedLiterature,
-        }
-      })
+      const api1Results: SentenceResult[] = await Promise.all(
+        sentences.map(async (sentence, index) => {
+          const exaResultsForSentence = exaResults[index] || []
+          const literature = exaResultsForSentence
+            .slice(0, 3) // Take first 3 results before deduplication
+            .map(exaResult => convertExaResultToLiterature(exaResult, literatureId++))
+          
+          // Apply deduplication and sorting
+          const deduplicatedLiterature = DeduplicationService.sortByRelevanceAndQuality(
+            DeduplicationService.deduplicate(literature)
+          ).slice(0, 2) // Keep top 2 after deduplication
+          
+          // Add GPT-5 evaluation for each literature item
+           const evaluatedLiterature = await Promise.all(
+             deduplicatedLiterature.map(async (lit) => {
+               try {
+                 const evaluationRequest = {
+                   query: sentence,
+                   title: lit.title,
+                   authors: lit.authors,
+                   journal: lit.journal,
+                   year: lit.year,
+                   abstract: lit.abstract,
+                   doi: lit.doi,
+                   citationCount: lit.citationCount,
+                   impactFactor: lit.impactFactor
+                 }
+                 const evaluation = await evaluationService.evaluateLiterature(evaluationRequest)
+                 return { ...lit, evaluation }
+               } catch (error) {
+                 console.error(`Evaluation failed for literature ${lit.id}:`, error)
+                 return lit // Return without evaluation if it fails
+               }
+             })
+           )
+          
+          return {
+            sentence,
+            sentenceIndex: index + 1,
+            literature: evaluatedLiterature,
+          }
+        })
+      )
 
       // Convert Crossref results to our Literature format for API 2
-      const api2Results: SentenceResult[] = sentences.map((sentence, index) => {
-        const crossrefResultsForSentence = crossrefResults[index] || []
-        // Results are already converted and deduplicated in the search phase
-        const literature = crossrefResultsForSentence
-        
-        // Apply final sorting for Crossref results
-        const sortedLiterature = DeduplicationService.sortByRelevanceAndQuality(literature)
-        
-        return {
-          sentence,
-          sentenceIndex: index + 1,
-          literature: sortedLiterature,
-        }
-      })
+      const api2Results: SentenceResult[] = await Promise.all(
+        sentences.map(async (sentence, index) => {
+          const crossrefResultsForSentence = crossrefResults[index] || []
+          // Results are already converted and deduplicated in the search phase
+          const literature = crossrefResultsForSentence
+          
+          // Apply final sorting for Crossref results
+          const sortedLiterature = DeduplicationService.sortByRelevanceAndQuality(literature)
+          
+          // Add GPT-5 evaluation for each literature item
+           const evaluatedLiterature = await Promise.all(
+             sortedLiterature.map(async (lit) => {
+               try {
+                 const evaluationRequest = {
+                   query: sentence,
+                   title: lit.title,
+                   authors: lit.authors,
+                   journal: lit.journal,
+                   year: lit.year,
+                   abstract: lit.abstract,
+                   doi: lit.doi,
+                   citationCount: lit.citationCount,
+                   impactFactor: lit.impactFactor
+                 }
+                 const evaluation = await evaluationService.evaluateLiterature(evaluationRequest)
+                 return { ...lit, evaluation }
+               } catch (error) {
+                 console.error(`Evaluation failed for literature ${lit.id}:`, error)
+                 return lit // Return without evaluation if it fails
+               }
+             })
+           )
+          
+          return {
+            sentence,
+            sentenceIndex: index + 1,
+            literature: evaluatedLiterature,
+          }
+        })
+      )
 
       const response = {
         api1: api1Results,

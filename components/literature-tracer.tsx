@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, ExternalLink, Copy, ChevronDown, Users, BookOpen, Calendar, Info, AlertCircle, RefreshCw, History, Trash2 } from "lucide-react"
+import { Search, ExternalLink, Copy, ChevronDown, Users, BookOpen, Calendar, Info, AlertCircle, RefreshCw, History, Trash2, Star, TrendingUp, Shield, Award } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -229,6 +229,65 @@ export function LiteratureTracer() {
                   </div>
                 )}
               </div>
+
+              {/* GPT-5 Quality Evaluation */}
+              {literature.evaluation && (
+                <div className="bg-gradient-to-r from-purple-50 to-indigo-50 p-4 rounded-lg border border-purple-200">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Award className="w-4 h-4 text-purple-600" />
+                    <span className="text-sm font-medium text-purple-800">AI质量评估</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                    <div className="flex items-center gap-2">
+                      <Star className="w-3 h-3 text-yellow-500" />
+                      <span className="text-xs text-gray-600">相关性</span>
+                      <span className="text-sm font-semibold text-purple-700">
+                        {literature.evaluation.relevanceScore.toFixed(1)}/10
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Shield className="w-3 h-3 text-green-500" />
+                      <span className="text-xs text-gray-600">可信度</span>
+                      <span className="text-sm font-semibold text-purple-700">
+                        {literature.evaluation.credibilityScore.toFixed(1)}/10
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className="w-3 h-3 text-blue-500" />
+                      <span className="text-xs text-gray-600">影响力</span>
+                      <span className="text-sm font-semibold text-purple-700">
+                        {literature.evaluation.impactScore.toFixed(1)}/10
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Award className="w-3 h-3 text-purple-500" />
+                      <span className="text-xs text-gray-600">综合</span>
+                      <span className="text-sm font-semibold text-purple-700">
+                        {literature.evaluation.overallScore.toFixed(1)}/10
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="text-xs text-purple-700 leading-relaxed">
+                    <strong>评估理由：</strong>{literature.evaluation.reasoning}
+                  </div>
+                  
+                  {literature.evaluation.strengths.length > 0 && (
+                    <div className="mt-2 text-xs">
+                      <span className="font-medium text-green-700">优势：</span>
+                      <span className="text-green-600">{literature.evaluation.strengths.join(', ')}</span>
+                    </div>
+                  )}
+                  
+                  {literature.evaluation.limitations.length > 0 && (
+                    <div className="mt-1 text-xs">
+                      <span className="font-medium text-orange-700">局限：</span>
+                      <span className="text-orange-600">{literature.evaluation.limitations.join(', ')}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {literature.abstract && (
