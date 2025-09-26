@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Search, ExternalLink, Copy, ChevronDown, Users, BookOpen, Calendar, Info, AlertCircle, RefreshCw, History, Trash2, Star, TrendingUp, Shield, Award, ChevronUp } from "lucide-react"
+import { Search, ExternalLink, Copy, ChevronDown, Users, BookOpen, Calendar, Info, AlertCircle, RefreshCw, History, Trash2, Star, TrendingUp, Shield, Award, ChevronUp, Zap, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -11,6 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { useToast } from "@/components/ui/use-toast"
 import { CitationFormatter } from "@/lib/citationFormatter"
 import { Literature as LiteratureType } from "@/app/api/search/route"
+import { aiHighlightService, type HighlightOptions } from "@/lib/aiHighlightService"
 
 interface SentenceResult {
   sentence: string
@@ -56,6 +57,18 @@ export function LiteratureTracer() {
   const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([])
   const [showHistory, setShowHistory] = useState(false)
   const [expandedAbstracts, setExpandedAbstracts] = useState<Set<number>>(new Set())
+  
+  // AI highlighting states
+  const [aiHighlightEnabled, setAiHighlightEnabled] = useState(false)
+  const [highlightOptions, setHighlightOptions] = useState<HighlightOptions>({
+    enableAI: false,
+    keywordThreshold: 0.1,
+    semanticThreshold: 0.3,
+    hybridMode: true
+  })
+  const [isHighlighting, setIsHighlighting] = useState(false)
+  const [highlightedTexts, setHighlightedTexts] = useState<Map<string, string>>(new Map())
+  
   const { toast } = useToast()
 
   useEffect(() => {
@@ -185,18 +198,54 @@ export function LiteratureTracer() {
     return text.substring(0, maxLength) + "..."
   }
 
-  const highlightRelevantText = (text: string, query: string) => {
+  // AI-powered highlighting function
+  const highlightRelevantText = async (text: string, query: string): Promise<string> => {
     if (!query.trim()) return text
     
-    const queryWords = query.toLowerCase().split(/\s+/).filter(word => word.length > 1)
-    let highlightedText = text
+    const cacheKey = `${query}:${text.substring(0, 100)}`
     
-    queryWords.forEach(word => {
-      const regex = new RegExp(`(${word})`, 'gi')
-      highlightedText = highlightedText.replace(regex, '<mark class="bg-yellow-200 px-1 rounded">$1</mark>')
+    // Check cache first
+    if (highlightedTexts.has(cacheKey)) {
+      return highlightedTexts.get(cacheKey)!
+    }
+    
+    try {
+      const options: HighlightOptions = {
+        ...highlightOptions,
+        enableAI: aiHighlightEnabled
+      }
+      
+      const result = await aiHighlightService.highlightText(query, text, options)
+      
+      // Cache the result
+      setHighlightedTexts(prev => new Map(prev).set(cacheKey, result))
+      
+      return result
+    } catch (error) {
+      console.error('AI highlighting failed:', error)
+      // Fallback to traditional highlighting
+      return aiHighlightService.highlightText(query, text, { ...highlightOptions, enableAI: false })
+    }
+  }
+
+  // Toggle AI highlighting
+  const toggleAIHighlight = () => {
+    const newEnabled = !aiHighlightEnabled
+    setAiHighlightEnabled(newEnabled)
+    setHighlightOptions(prev => ({ ...prev, enableAI: newEnabled }))
+    
+    // Clear cache when toggling
+    setHighlightedTexts(new Map())
+    
+    toast({
+      description: newEnabled ? "AI highlighting enabled" : "AI highlighting disabled",
+      action: newEnabled ? (
+        <div className="flex items-center gap-1 text-xs">
+          <Zap className="w-3 h-3" />
+          <span>AI Mode</span>
+        </div>
+      ) : undefined
     })
-    
-    return highlightedText
   }
 
   const LiteratureCard = ({ literature, index }: { literature: LiteratureType; index: number }) => {
@@ -204,7 +253,21 @@ export function LiteratureTracer() {
     const abstractText = literature.abstract || ""
     const shouldTruncate = abstractText.length > 300
     const displayText = isExpanded || !shouldTruncate ? abstractText : truncateText(abstractText)
-    const highlightedText = highlightRelevantText(displayText, query)
+    
+    // Use state for highlighted text to handle async highlighting
+    const [highlightedText, setHighlightedText] = useState<string>(displayText)
+    
+    useEffect(() => {
+      const updateHighlight = async () => {
+        if (query.trim()) {
+          const result = await highlightRelevantText(displayText, query)
+          setHighlightedText(result)
+        } else {
+          setHighlightedText(displayText)
+        }
+      }
+      updateHighlight()
+    }, [displayText, query])
 
     return (
       <Card className="border border-border hover:shadow-md transition-shadow">
@@ -473,6 +536,14 @@ export function LiteratureTracer() {
                     搜索
                   </>
                 )}
+              </Button>
+              <Button
+                variant={aiHighlightEnabled ? "default" : "outline"}
+                size="icon"
+                onClick={toggleAIHighlight}
+                title={aiHighlightEnabled ? "关闭AI智能高亮" : "开启AI智能高亮"}
+              >
+                <Zap className="w-4 h-4" />
               </Button>
               <DropdownMenu open={showHistory} onOpenChange={setShowHistory}>
                 <DropdownMenuTrigger asChild>
