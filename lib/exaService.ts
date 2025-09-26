@@ -12,6 +12,7 @@ const ExaResultSchema = z.object({
   highlights: z.array(z.string()).optional(),
   highlightScores: z.array(z.number()).optional(),
   score: z.number().optional(),
+  doi: z.string().optional(),
 });
 
 const ExaSearchResponseSchema = z.object({
@@ -91,6 +92,7 @@ export class ExaService {
         highlights: result.highlights,
         highlightScores: result.highlightScores,
         score: result.score,
+        doi: result.doi, // Extract DOI
       }));
 
       return ExaResultSchema.array().parse(transformedResults);

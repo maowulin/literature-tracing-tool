@@ -104,6 +104,39 @@ export class CrossrefService {
     });
   }
 
+  async getWorkByDoi(doi: string): Promise<CrossrefWork | null> {
+    const url = `${this.baseUrl}/${encodeURIComponent(doi)}`;
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': this.userAgent,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          return null; // Not found
+        }
+        throw new Error(`Crossref API error for DOI ${doi}: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      if (data.status !== 'ok' || !data.message) {
+        throw new Error(`Invalid response for DOI ${doi}`);
+      }
+
+      return data.message as CrossrefWork;
+    } catch (error) {
+      console.error(`Failed to fetch work by DOI ${doi}:`, error);
+      return null;
+    }
+  }
+
+  async getWorksByDois(dois: string[]): Promise<Array<CrossrefWork | null>> {
+    return Promise.all(dois.map(doi => this.getWorkByDoi(doi)));
+  }
+
   private async makeRequestWithRetry(url: string, retryCount: number = 0): Promise<CrossrefWork[]> {
     try {
       const response = await fetch(url, {

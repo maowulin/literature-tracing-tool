@@ -167,7 +167,7 @@ export async function POST(request: NextRequest) {
     // Initialize Exa service
     const exaApiKey = process.env.EXA_API_KEY
     if (!exaApiKey) {
-      console.log("EXA_API_KEY not found, using mock data")
+      console.warn("EXA_API_KEY is not set. Falling back to mock data.")
       return await fallbackToMockData(sentences)
     }
 
@@ -190,31 +190,34 @@ export async function POST(request: NextRequest) {
         includeSummary: true,
       })
 
-      // Search with Crossref for each sentence using dual approach
-      const crossrefPromises = sentences.map(async (sentence) => {
+      // Search with Crossref for each sentence using a hybrid approach
+      const crossrefPromises = sentences.map(async (sentence, index) => {
         try {
-          // First approach: bibliographic search (general query)
+          const exaResultsForSentence = exaResults[index] || []
+          const doisFromExa = exaResultsForSentence
+            .map(r => r.doi)
+            .filter((doi): doi is string => !!doi && doi.startsWith('10.'))
+
+          // Fetch by DOI from Exa results
+          const doiResults = await crossrefService.getWorksByDois(doisFromExa)
+          const literatureFromDois = doiResults
+            .filter((work): work is NonNullable<typeof work> => work !== null)
+            .map((work, i) => convertCrossrefToLiterature(work, 1000 + i))
+
+          // Fallback/supplement with bibliographic search
           const bibliographicResults = await crossrefService.searchByBibliographic(sentence, { 
             rows: 3,
             type: 'journal-article'
           })
+          const literatureFromBiblio = bibliographicResults.map((work, i) => convertCrossrefToLiterature(work, 2000 + i))
+
+          // Combine and deduplicate results
+          const combinedLiterature = [...literatureFromDois, ...literatureFromBiblio]
+          const deduplicatedResults = DeduplicationService.deduplicate(combinedLiterature)
           
-          // Second approach: title-based search (extract potential titles from sentence)
-          const titleResults = await crossrefService.searchByTitle(sentence, { 
-            rows: 2,
-            type: 'journal-article'
-          })
-          
-          // Combine and deduplicate results from both approaches
-          const combinedResults = [...bibliographicResults, ...titleResults]
-          const deduplicatedResults = DeduplicationService.deduplicate(
-            combinedResults.map((work, index) => convertCrossrefToLiterature(work, index))
-          )
-          
-          // Return top 3 results after deduplication
           return deduplicatedResults.slice(0, 3)
         } catch (error) {
-          console.error(`Crossref dual search failed for sentence: "${sentence}"`, error)
+          console.error(`Crossref hybrid search failed for sentence: "${sentence}"`, error)
           return []
         }
       })

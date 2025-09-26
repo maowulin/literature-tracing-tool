@@ -29,7 +29,7 @@ interface SearchHistoryItem {
 const sampleQueries = [
   "子宫scar痕会影响胎盘。子宫scar痕可能导致罕见但严重的并发症，如剖宫产scar痕异位妊娠，涉及胎盘异常生长和出血风险。",
   "机器学习在医学诊断中的应用越来越广泛。深度学习算法可以自动分析医学图像。人工智能系统能够辅助临床决策。",
-  "气候变化对生物多样性产生重大影响。全球变暖改变了物种分布模式。生态系统在气候压力下面临韧性挑战。",
+  "气候变暖改变了物种分布模式。生态系统在气候压力下面临韧性挑战。",
   "量子计算为优化问题提供了新的解决方案。量子算法在某些计算任务上具有指数级优势。",
   "CRISPR基因编辑技术在治疗应用中显示出巨大潜力。基因治疗为遗传疾病提供了新的治疗途径。",
 ]
@@ -248,26 +248,11 @@ export function LiteratureTracer() {
     })
   }
 
-  const LiteratureCard = ({ literature, index }: { literature: LiteratureType; index: number }) => {
+  const LiteratureCard = ({ literature, index, highlightedAbstract }: { literature: LiteratureType; index: number; highlightedAbstract: string }) => {
     const isExpanded = expandedAbstracts.has(literature.id)
     const abstractText = literature.abstract || ""
     const shouldTruncate = abstractText.length > 300
     const displayText = isExpanded || !shouldTruncate ? abstractText : truncateText(abstractText)
-    
-    // Use state for highlighted text to handle async highlighting
-    const [highlightedText, setHighlightedText] = useState<string>(displayText)
-    
-    useEffect(() => {
-      const updateHighlight = async () => {
-        if (query.trim()) {
-          const result = await highlightRelevantText(displayText, query)
-          setHighlightedText(result)
-        } else {
-          setHighlightedText(displayText)
-        }
-      }
-      updateHighlight()
-    }, [displayText, query])
 
     return (
       <Card className="border border-border hover:shadow-md transition-shadow">
@@ -405,7 +390,7 @@ export function LiteratureTracer() {
                 </div>
                 <div 
                   className="text-sm text-muted-foreground leading-relaxed break-words overflow-hidden max-w-full"
-                  dangerouslySetInnerHTML={{ __html: highlightedText }}
+                  dangerouslySetInnerHTML={{ __html: highlightedAbstract || displayText }}
                 />
               </div>
             )}
@@ -483,29 +468,55 @@ export function LiteratureTracer() {
     )
   }
 
-  const SentenceResultSection = ({ sentenceResult }: { sentenceResult: SentenceResult }) => (
-    <div className="mb-8">
-      <div className="flex items-start gap-4 mb-4">
-        <div className="flex-shrink-0">
-          <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
-            {sentenceResult.sentenceIndex}
+  const SentenceResultSection = ({ sentenceResult }: { sentenceResult: SentenceResult }) => {
+    const [highlightedAbstracts, setHighlightedAbstracts] = useState<string[]>([])
+
+    useEffect(() => {
+      const fetchHighlightedAbstracts = async () => {
+        if (aiHighlightEnabled && query.trim() && sentenceResult.literature.length > 0) {
+          const abstracts = sentenceResult.literature.map(lit => lit.abstract || "");
+          const results = await aiHighlightService.batchHighlight(query, abstracts, {
+            ...highlightOptions,
+            enableAI: aiHighlightEnabled
+          });
+          setHighlightedAbstracts(results);
+        } else {
+          setHighlightedAbstracts(sentenceResult.literature.map(lit => lit.abstract || ""));
+        }
+      };
+
+      fetchHighlightedAbstracts();
+    }, [query, aiHighlightEnabled, sentenceResult.literature]);
+
+    return (
+      <div className="mb-8">
+        <div className="flex items-start gap-4 mb-4">
+          <div className="flex-shrink-0">
+            <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-medium">
+              {sentenceResult.sentenceIndex}
+            </div>
+          </div>
+          <div className="flex-1">
+            <h3 className="text-lg font-medium text-foreground leading-relaxed break-words">{sentenceResult.sentence}</h3>
+            <p className="text-sm text-muted-foreground mt-2">
+              Supporting References ({sentenceResult.literature.length} papers)
+            </p>
           </div>
         </div>
-        <div className="flex-1">
-          <h3 className="text-lg font-medium text-foreground leading-relaxed break-words">{sentenceResult.sentence}</h3>
-          <p className="text-sm text-muted-foreground mt-2">
-            Supporting References ({sentenceResult.literature.length} papers)
-          </p>
+
+        <div className="ml-12 space-y-3">
+          {sentenceResult.literature.map((literature, index) => (
+            <LiteratureCard
+              key={literature.id}
+              literature={literature}
+              index={index}
+              highlightedAbstract={highlightedAbstracts[index] || literature.abstract || ""}
+            />
+          ))}
         </div>
       </div>
-
-      <div className="ml-12 space-y-3">
-        {sentenceResult.literature.map((literature, index) => (
-          <LiteratureCard key={literature.id} literature={literature} index={index} />
-        ))}
-      </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
