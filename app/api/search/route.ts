@@ -194,10 +194,16 @@ export async function POST(request: NextRequest) {
       const crossrefPromises = sentences.map(async (sentence) => {
         try {
           // First approach: bibliographic search (general query)
-          const bibliographicResults = await crossrefService.searchByBibliographic(sentence, 3)
+          const bibliographicResults = await crossrefService.searchByBibliographic(sentence, { 
+            rows: 3,
+            type: 'journal-article'
+          })
           
           // Second approach: title-based search (extract potential titles from sentence)
-          const titleResults = await crossrefService.searchByTitle(sentence, 2)
+          const titleResults = await crossrefService.searchByTitle(sentence, { 
+            rows: 2,
+            type: 'journal-article'
+          })
           
           // Combine and deduplicate results from both approaches
           const combinedResults = [...bibliographicResults, ...titleResults]

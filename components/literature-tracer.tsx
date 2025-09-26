@@ -563,10 +563,10 @@ export function LiteratureTracer() {
               <Tabs defaultValue="api1" className="w-full">
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="api1">
-                    接口一 ({currentResults.api1.reduce((acc, result) => acc + result.literature.length, 0)} 篇文献)
+                    Exa API ({currentResults.api1.reduce((acc, result) => acc + result.literature.length, 0)} 篇文献)
                   </TabsTrigger>
                   <TabsTrigger value="api2">
-                    接口二 ({currentResults.api2.reduce((acc, result) => acc + result.literature.length, 0)} 篇文献)
+                    Crossref API ({currentResults.api2.reduce((acc, result) => acc + result.literature.length, 0)} 篇文献)
                   </TabsTrigger>
                 </TabsList>
 
@@ -574,7 +574,7 @@ export function LiteratureTracer() {
                   <div className="space-y-6">
                     {currentResults.api1.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground">
-                        <p>接口一暂无结果</p>
+                        <p>Exa API 暂无结果</p>
                       </div>
                     ) : (
                       currentResults.api1.map((sentenceResult, index) => (
@@ -588,7 +588,7 @@ export function LiteratureTracer() {
                   <div className="space-y-6">
                     {currentResults.api2.length === 0 ? (
                       <div className="text-center py-8 text-muted-foreground">
-                        <p>接口二暂无结果</p>
+                        <p>Crossref API 暂无结果</p>
                       </div>
                     ) : (
                       currentResults.api2.map((sentenceResult, index) => (

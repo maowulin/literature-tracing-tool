@@ -38,6 +38,7 @@ interface CrossrefSearchOptions {
   offset?: number;
   sort?: 'relevance' | 'score' | 'updated' | 'deposited' | 'indexed' | 'published' | 'published-print' | 'published-online';
   order?: 'asc' | 'desc';
+  type?: 'journal-article' | 'book-chapter' | 'conference-paper' | 'dataset' | 'preprint' | 'book' | 'proceedings-article' | 'report' | 'thesis';
 }
 
 export class CrossrefService {
@@ -63,6 +64,10 @@ export class CrossrefService {
       params.append('query.author', options.author);
     }
     
+    if (options.type) {
+      params.append('filter', `type:${options.type}`);
+    }
+    
     params.append('rows', (options.rows || 10).toString());
     params.append('offset', (options.offset || 0).toString());
     
@@ -79,21 +84,23 @@ export class CrossrefService {
     return this.makeRequestWithRetry(url);
   }
 
-  async searchByTitle(title: string, rows: number = 5): Promise<CrossrefWork[]> {
+  async searchByTitle(title: string, options: Partial<CrossrefSearchOptions> = {}): Promise<CrossrefWork[]> {
     return this.search({
       title: title.trim(),
-      rows,
-      sort: 'relevance',
-      order: 'desc'
+      rows: options.rows || 5,
+      sort: options.sort || 'relevance',
+      order: options.order || 'desc',
+      type: options.type
     });
   }
 
-  async searchByBibliographic(query: string, rows: number = 5): Promise<CrossrefWork[]> {
+  async searchByBibliographic(query: string, options: Partial<CrossrefSearchOptions> = {}): Promise<CrossrefWork[]> {
     return this.search({
       query: query.trim(),
-      rows,
-      sort: 'relevance',
-      order: 'desc'
+      rows: options.rows || 5,
+      sort: options.sort || 'relevance',
+      order: options.order || 'desc',
+      type: options.type
     });
   }
 
