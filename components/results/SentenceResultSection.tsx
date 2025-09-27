@@ -190,13 +190,45 @@ export function SentenceResultSection({
                     onClick={() => copyToClipboard(lit.doi, 'DOI')}
                     className="h-6"
                   >
-                    复制 DOI
+                    <Copy className="w-3 h-3 mr-1" /> 复制 DOI
                   </Button>
                 </div>
 
                 {/* Abstract */}
                 {lit.abstract && (
                   <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-medium text-muted-foreground">摘要</div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => copyToClipboard(lit.abstract || '', 'Abstract')}
+                          className="h-7 px-2"
+                        >
+                          <Copy className="w-3 h-3 mr-1" /> 复制摘要
+                        </Button>
+                        {isAbstractLong(lit.abstract) && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => toggleAbstractExpansion(lit.id)}
+                            className="h-7 px-2 text-blue-600 inline-flex items-center gap-1"
+                          >
+                            {expandedAbstracts.has(lit.id) ? (
+                              <>
+                                收起摘要 <ChevronUp className="w-3 h-3" />
+                              </>
+                            ) : (
+                              <>
+                                展开全文 <ChevronDown className="w-3 h-3" />
+                              </>
+                            )}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
                     <div className="text-sm leading-relaxed break-words">
                       {isAbstractLong(lit.abstract) && !expandedAbstracts.has(lit.id) ? (
                         <>
@@ -207,14 +239,6 @@ export function SentenceResultSection({
                           ) : (
                             getTruncatedAbstract(lit.abstract)
                           )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleAbstractExpansion(lit.id)}
-                            className="h-6 p-0 text-blue-600 inline-flex items-center gap-1 ml-1"
-                          >
-                            展开全文 <ChevronDown className="w-3 h-3" />
-                          </Button>
                         </>
                       ) : (
                         <>
@@ -225,44 +249,24 @@ export function SentenceResultSection({
                           ) : (
                             lit.abstract
                           )}
-                          {isAbstractLong(lit.abstract) && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => toggleAbstractExpansion(lit.id)}
-                              className="h-6 p-0 text-blue-600 inline-flex items-center gap-1 ml-1"
-                            >
-                              收起摘要 <ChevronUp className="w-3 h-3" />
-                            </Button>
-                          )}
                         </>
                       )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => copyToClipboard(lit.abstract || '', 'Abstract')}
-                        className="h-6"
-                      >
-                        复制摘要
-                      </Button>
                     </div>
                   </div>
                 )}
 
                 {/* AI Quality Evaluation */}
                 {lit.evaluation ? (
-                  <div className="bg-muted rounded-md p-3 space-y-2">
+                  <div className="bg-muted/50 border border-border rounded-md p-3 space-y-2">
                     <div className="flex items-center gap-2">
                       <Badge className={`text-xs ${getScoreColor(lit.evaluation.relevance.score)}`}>
-                        相关性: {getScoreLabel(lit.evaluation.relevance.score)} ({lit.evaluation.relevance.score}/10)
+                        相关性: {getScoreLabel(lit.evaluation.relevance.score)} ({Math.round(lit.evaluation.relevance.score)}/10)
                       </Badge>
                       <Badge className={`text-xs ${getScoreColor(lit.evaluation.credibility.score)}`}>
-                        可信度: {getScoreLabel(lit.evaluation.credibility.score)} ({lit.evaluation.credibility.score}/10)
+                        可信度: {getScoreLabel(lit.evaluation.credibility.score)} ({Math.round(lit.evaluation.credibility.score)}/10)
                       </Badge>
                       <Badge className={`text-xs ${getScoreColor(lit.evaluation.impact.score)}`}>
-                        影响力: {getScoreLabel(lit.evaluation.impact.score)} ({lit.evaluation.impact.score}/10)
+                        影响力: {getScoreLabel(lit.evaluation.impact.score)} ({Math.round(lit.evaluation.impact.score)}/10)
                       </Badge>
                     </div>
                     <div className="text-xs text-muted-foreground">
@@ -293,15 +297,20 @@ export function SentenceResultSection({
                 ) : null}
 
                 {/* Citation */}
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => copyToClipboard(formatCitation(lit), 'Citation')}
-                    className="h-6"
-                  >
-                    复制引用
-                  </Button>
+                <div className="space-y-2">
+                  <div className="text-xs text-muted-foreground bg-muted/50 border border-border rounded-md p-2 break-words select-text">
+                    {formatCitation(lit)}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => copyToClipboard(formatCitation(lit), 'Citation')}
+                      className="h-6"
+                    >
+                      <Copy className="w-3 h-3 mr-1" /> 复制引用
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>
