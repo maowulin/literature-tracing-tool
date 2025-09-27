@@ -190,6 +190,10 @@ export async function POST(request: NextRequest) {
         includeSummary: true,
       })
 
+      if (exaResults.length !== sentences.length) {
+        console.warn("Warning: Mismatch between number of sentences and Exa search results.");
+      }
+
       // Search with Crossref for each sentence using a hybrid approach
       const crossrefPromises = sentences.map(async (sentence, index) => {
         try {

@@ -182,24 +182,26 @@ class AIHighlightService {
     query: string,
     texts: string[],
     options?: HighlightOptions
-  ): Promise<string[]> {
-    const results: string[] = [];
-    const batchSize = 3;
-
-    for (let i = 0; i < texts.length; i += batchSize) {
-      const batch = texts.slice(i, i + batchSize);
-      const batchPromises = batch.map(text => this.highlightText(query, text, options));
-      
-      try {
-        const batchResults = await Promise.all(batchPromises);
-        results.push(...batchResults);
-      } catch (error) {
-        console.error('Batch highlighting error:', error);
-        results.push(...batch.map(text => this.fallbackHighlight(query, text)));
-      }
+  ): Promise<(string | null)[]> {
+    if (!openRouterService.isAvailable()) {
+      // Fallback to keyword-based highlighting if AI service is not available
+      return texts.map(text => this.fallbackHighlight(query, text));
     }
 
-    return results;
+    const highlightPromises = texts.map(text => 
+      this.highlightText(query, text, options).catch(error => {
+        console.error(`Error highlighting text: "${text.substring(0, 50)}..."`, error);
+        return this.fallbackHighlight(query, text); // Fallback for individual error
+      })
+    );
+
+    try {
+      return await Promise.all(highlightPromises);
+    } catch (error) {
+      console.error('Batch highlighting failed:', error);
+      // Broad fallback in case Promise.all fails unexpectedly
+      return texts.map(text => this.fallbackHighlight(query, text));
+    }
   }
 
   getServiceStatus(): {

@@ -126,7 +126,7 @@ export function LiteratureTracer() {
     setHasSearched(true)
 
     try {
-      const response = await fetch("/api/search", {
+      const response = await fetch("/api/search-simple", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: query.trim() }),
@@ -507,7 +507,7 @@ export function LiteratureTracer() {
         <div className="ml-12 space-y-3">
           {sentenceResult.literature.map((literature, index) => (
             <LiteratureCard
-              key={literature.id}
+              key={`${sentenceResult.sentenceIndex}-${literature.id}`}
               literature={literature}
               index={index}
               highlightedAbstract={highlightedAbstracts[index] || literature.abstract || ""}

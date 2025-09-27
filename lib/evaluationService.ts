@@ -41,7 +41,7 @@ export class EvaluationService {
     try {
       // Create AbortController for timeout
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 20000) // 20 second timeout
 
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
