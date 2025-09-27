@@ -58,64 +58,6 @@ export type Literature = z.infer<typeof LiteratureSchema>
 type SentenceResult = z.infer<typeof SentenceResultSchema>
 type SearchRequest = z.infer<typeof SearchRequestSchema>
 
-// Mock data for initial testing
-const mockLiteratureData: Literature[] = [
-  {
-    id: 1,
-    title: "Longitudinal changes in uterine artery Doppler and blood pressure and risk of pre-eclampsia",
-    authors: ["A. Khalil", "R. Garcia-Mandujano", "N. Maiz", "and 5 other authors"],
-    journal: "Ultrasound in Obstetrics & Gynecology",
-    year: 2014,
-    doi: "10.1002/uog.13257",
-    verified: true,
-    supportingPages: 2,
-    impactFactor: 6.194,
-    citationCount: 342,
-    abstract: "Background: Uterine artery Doppler screening is used to identify pregnancies at risk of pre-eclampsia. This study aimed to investigate longitudinal changes in uterine artery pulsatility index (PI) and mean arterial pressure (MAP) throughout pregnancy and their association with the development of pre-eclampsia.",
-    evaluation: {
-      relevance: { score: 8, reason: "Highly relevant to medical research and pregnancy care" },
-      credibility: { score: 9, reason: "Published in reputable journal with strong peer review" },
-      impact: { score: 7, reason: "Significant clinical implications for pregnancy monitoring" },
-      advantages: [
-        "Published in high-impact journal",
-        "Large sample size and longitudinal design",
-        "Clinical relevance for pregnancy care"
-      ],
-      limitations: [
-        "Limited to specific population",
-        "Requires specialized equipment for implementation"
-      ]
-    }
-  },
-  {
-    id: 2,
-    title: "Machine learning algorithms for early disease detection: A systematic review",
-    authors: ["R. Singh", "M. Wang", "L. Garcia", "and 6 other authors"],
-    journal: "The Lancet Digital Health",
-    year: 2022,
-    doi: "10.1016/S2589-7500(22)00089-3",
-    verified: true,
-    impactFactor: 36.615,
-    citationCount: 892,
-    abstract: "Early disease detection is crucial for improving patient outcomes and reducing healthcare costs. This systematic review evaluates machine learning algorithms used for early detection across various diseases including cancer, cardiovascular disease, and neurological disorders.",
-    evaluation: {
-      relevance: { score: 9, reason: "Comprehensive review highly relevant to ML in healthcare" },
-      credibility: { score: 10, reason: "Published in The Lancet Digital Health with rigorous peer review" },
-      impact: { score: 9, reason: "High citation count and broad clinical applications" },
-      advantages: [
-        "Published in The Lancet Digital Health",
-        "Comprehensive systematic review methodology",
-        "High citation count indicating impact",
-        "Covers multiple disease domains"
-      ],
-      limitations: [
-        "Review nature limits novel findings",
-        "Rapid evolution of ML field may date findings"
-      ]
-    }
-  },
-]
-
 // Helper function to convert Crossref results to Literature format
 function convertCrossrefToLiterature(crossrefWork: any, id: number): Literature {
   const crossrefService = new CrossrefService()
@@ -204,8 +146,10 @@ export async function POST(request: NextRequest) {
     // Initialize Exa service
     const exaApiKey = process.env.EXA_API_KEY
     if (!exaApiKey) {
-      console.warn("EXA_API_KEY is not set. Falling back to mock data.")
-      return await fallbackToMockData(sentences)
+      return NextResponse.json(
+        { error: "EXA_API_KEY is not configured. Please set up the API key to use the search functionality." },
+        { status: 500 }
+      )
     }
 
     if (sentences.length === 0) {
@@ -217,14 +161,25 @@ export async function POST(request: NextRequest) {
     const crossrefService = new CrossrefService()
     
     try {
-      // Search with Exa for each sentence concurrently
+      // Search with Exa for each sentence
       const exaResults = await exaService.searchMultipleQueries(sentences, {
-        type: "neural",
-        category: "research paper",
-        numResults: 3,
+        type: 'neural',
+        category: 'research paper',
+        numResults: 5,
         includeText: true,
         includeHighlights: true,
         includeSummary: true,
+      })
+
+      console.log('EXA search completed:', {
+        sentencesCount: sentences.length,
+        exaResultsCount: exaResults.length,
+        exaResults: exaResults.map((results, index) => ({
+          sentenceIndex: index,
+          sentence: sentences[index],
+          resultCount: results.length,
+          results: results.map(r => ({ id: r.id, title: r.title, url: r.url }))
+        }))
       })
 
       if (exaResults.length !== sentences.length) {
@@ -361,8 +316,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(validatedResponse)
 
     } catch (exaError) {
-      console.error("Exa search failed, falling back to mock data:", exaError)
-      return await fallbackToMockData(sentences)
+      console.error("Search service failed:", exaError)
+      return NextResponse.json(
+        { error: `Search service failed: ${exaError instanceof Error ? exaError.message : 'Unknown error'}` },
+        { status: 500 }
+      )
     }
 
   } catch (error) {
@@ -380,31 +338,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
-
-// Fallback function for mock data
-async function fallbackToMockData(sentences: string[]) {
-  // Simulate processing delay
-  await new Promise(resolve => setTimeout(resolve, 1000))
-  
-  // Generate mock results for each sentence
-  const api1Results: SentenceResult[] = sentences.map((sentence, index) => ({
-    sentence,
-    sentenceIndex: index + 1,
-    literature: mockLiteratureData.slice(0, Math.min(2, mockLiteratureData.length)),
-  }))
-  
-  const api2Results: SentenceResult[] = sentences.map((sentence, index) => ({
-    sentence,
-    sentenceIndex: index + 1,
-    literature: mockLiteratureData.slice(1, Math.min(3, mockLiteratureData.length)),
-  }))
-  
-  const response = {
-    api1: api1Results,
-    api2: api2Results,
-  }
-  
-  const validatedResponse = SearchResponseSchema.parse(response)
-  return NextResponse.json(validatedResponse)
 }

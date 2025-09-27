@@ -93,7 +93,18 @@ export function useLiteratureSearch(query: string) {
       })
 
       if (!response.ok) {
-        throw new Error(`Search failed: ${response.status}`)
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+        
+        try {
+          const errorData = await response.json()
+          if (errorData.error) {
+            errorMessage = errorData.error
+          }
+        } catch {
+          // If response is not JSON, use the default HTTP error message
+        }
+        
+        throw new Error(errorMessage)
       }
 
       const data = await response.json()
@@ -104,7 +115,14 @@ export function useLiteratureSearch(query: string) {
       return data
     } catch (error) {
       console.error('Search error:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Search failed'
+      let errorMessage = 'Unknown error occurred'
+      
+      if (error instanceof Error) {
+        errorMessage = error.message
+      } else if (typeof error === 'string') {
+        errorMessage = error
+      }
+      
       setSearchError(errorMessage)
       setRetryCount(prev => prev + 1)
       throw error

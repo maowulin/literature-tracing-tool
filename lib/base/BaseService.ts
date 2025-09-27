@@ -81,7 +81,7 @@ export abstract class BaseService {
       const response = await fetch(url, {
         method,
         headers: requestHeaders,
-        body: body ? JSON.stringify(body) : undefined,
+        body: typeof body === 'string' ? body : (body ? JSON.stringify(body) : undefined),
         signal: controller.signal
       })
 

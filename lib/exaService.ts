@@ -45,7 +45,7 @@ export class ExaService extends BaseService {
   constructor() {
     const apiKey = process.env.EXA_API_KEY || ''
     super('https://api.exa.ai', {
-      'Authorization': `Bearer ${apiKey}`,
+      'x-api-key': apiKey,
       'Content-Type': 'application/json'
     })
     
@@ -104,7 +104,7 @@ export class ExaService extends BaseService {
     maxRetries: number = 3, 
     baseDelay: number = 1000
   ): Promise<ExaResult[]> {
-    return this.makeRequest<ExaResult[]>('/search', {
+    return this.makeRequest<ExaSearchResponse>('/search', {
        method: 'POST',
        body: JSON.stringify({
          query: options.query,
@@ -131,7 +131,9 @@ export class ExaService extends BaseService {
        if (!response.success || !response.data) {
          throw new Error(response.error || 'Exa search failed')
        }
-       return response.data
+       // EXA API returns { results: ExaResult[] }, so we need to extract the results array
+       const validatedData = ExaSearchResponseSchema.parse(response.data)
+       return validatedData.results
      })
   }
 

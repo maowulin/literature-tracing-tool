@@ -121,7 +121,7 @@ Return the result as a JSON object with a "sentences" array containing the split
         // Clean up trailing punctuation while preserving sentence structure
         return s.replace(/[;；\n]+$/, '').trim() || s
       })
-      .filter(s => s.length >= 5) // Filter out very short segments
+      .filter(s => s.length >= 2) // Filter out very short segments (reduced from 5 to 2)
   }
 }
 
