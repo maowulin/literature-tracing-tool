@@ -22,7 +22,9 @@ interface UseAIHighlightReturn {
 }
 
 export function useAIHighlight(): UseAIHighlightReturn {
-  const [isAIHighlightActive] = useState(true); // Always enabled
+  // AI高亮始终启用，不再需要手动切换
+  const isAIHighlightActive = true;
+  
   const [highlightOptions, setHighlightOptions] = useState<HighlightOptions>({
     enableAI: true,
     keywordThreshold: 0.3,

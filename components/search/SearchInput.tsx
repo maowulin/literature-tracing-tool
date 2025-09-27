@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
-import { Search, History, Trash2, Sparkles } from 'lucide-react'
+import { Search, History, Trash2 } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,7 +11,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useAIHighlight } from '@/hooks/use-ai-highlight'
 
 interface SearchHistoryItem {
   id: string
@@ -53,7 +52,6 @@ export function SearchInput({
   onClearHistory
 }: SearchInputProps) {
   const [inputValue, setInputValue] = useState(value)
-  const { isAIHighlightActive, toggleAIHighlight } = useAIHighlight()
 
   const handleSearch = () => {
     if (inputValue.trim()) {
