@@ -1,3 +1,6 @@
+import { BaseService } from './base/BaseService'
+import { APIResponse, SearchOptions } from './types'
+
 interface CrossrefWork {
   DOI: string;
   title: string[];
@@ -30,7 +33,7 @@ interface CrossrefResponse {
   };
 }
 
-interface CrossrefSearchOptions {
+export interface CrossrefSearchOptions extends SearchOptions {
   query?: string;
   title?: string;
   author?: string;
@@ -41,13 +44,12 @@ interface CrossrefSearchOptions {
   type?: 'journal-article' | 'book-chapter' | 'conference-paper' | 'dataset' | 'preprint' | 'book' | 'proceedings-article' | 'report' | 'thesis';
 }
 
-export class CrossrefService {
-  private readonly baseUrl = 'https://api.crossref.org/works';
-  private readonly userAgent = 'LiteratureTracer/1.0 (mailto:contact@example.com)';
-  private readonly maxRetries = 3;
-  private readonly retryDelay = 1000;
-
-  constructor() {}
+export class CrossrefService extends BaseService {
+  constructor() {
+    super('https://api.crossref.org/works', {
+      'User-Agent': 'LiteratureTracer/1.0 (mailto:contact@example.com)'
+    })
+  }
 
   async search(options: CrossrefSearchOptions): Promise<CrossrefWork[]> {
     const params = new URLSearchParams();
@@ -109,7 +111,8 @@ export class CrossrefService {
     try {
       const response = await fetch(url, {
         headers: {
-          'User-Agent': this.userAgent,
+          ...this.defaultHeaders,
+          'User-Agent': 'literature-tracing-tool/1.0 (mailto:contact@example.com)',
           'Accept': 'application/json'
         }
       });
@@ -138,39 +141,28 @@ export class CrossrefService {
   }
 
   private async makeRequestWithRetry(url: string, retryCount: number = 0): Promise<CrossrefWork[]> {
-    try {
-      const response = await fetch(url, {
+    const response = await this.makeRequest<CrossrefResponse>(
+      url.replace(this.baseUrl, ''),
+      {
         headers: {
-          'User-Agent': this.userAgent,
           'Accept': 'application/json'
         }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Crossref API error: ${response.status} ${response.statusText}`);
+      },
+      {
+        maxRetries: 3,
+        baseDelay: 1000
       }
+    )
 
-      const data: CrossrefResponse = await response.json();
-      
-      if (data.status !== 'ok') {
-        throw new Error(`Crossref API returned status: ${data.status}`);
-      }
-
-      return data.message.items || [];
-    } catch (error) {
-      console.error(`Crossref search error (attempt ${retryCount + 1}):`, error);
-      
-      if (retryCount < this.maxRetries) {
-        await this.delay(this.retryDelay * (retryCount + 1));
-        return this.makeRequestWithRetry(url, retryCount + 1);
-      }
-      
-      throw error;
+    if (!response.success || !response.data) {
+      throw new Error(response.error || 'Failed to fetch from Crossref API')
     }
-  }
 
-  private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    if (response.data.status !== 'ok') {
+      throw new Error(`Crossref API returned status: ${response.data.status}`)
+    }
+
+    return response.data.message.items || []
   }
 
   formatAuthors(authors?: Array<{ given?: string; family?: string }>): string[] {

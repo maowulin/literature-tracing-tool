@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { BaseService } from './base/BaseService'
+import { LiteratureEvaluation } from './types'
 
 // Literature evaluation result schema
 const LiteratureEvaluationSchema = z.object({
@@ -10,8 +12,6 @@ const LiteratureEvaluationSchema = z.object({
   strengths: z.array(z.string()),
   limitations: z.array(z.string())
 })
-
-export type LiteratureEvaluation = z.infer<typeof LiteratureEvaluationSchema>
 
 interface EvaluationRequest {
   query: string
@@ -25,19 +25,21 @@ interface EvaluationRequest {
   impactFactor?: number
 }
 
-export class EvaluationService {
-  private apiKey: string
-  private baseUrl = 'https://openrouter.ai/api/v1'
-  private model = 'openai/gpt-4o' // Using stable GPT-4o model
+export class EvaluationService extends BaseService {
+  private model = 'openai/gpt-4o'
 
   constructor() {
-    this.apiKey = process.env.OPENROUTER_API_KEY || ''
-    console.log('EvaluationService constructor called')
-    console.log('API Key from env:', this.apiKey ? `${this.apiKey.substring(0, 10)}...` : 'NOT FOUND')
-    console.log('Full env OPENROUTER_API_KEY:', process.env.OPENROUTER_API_KEY ? 'EXISTS' : 'MISSING')
-    console.log('All env vars:', Object.keys(process.env).filter(key => key.includes('OPENROUTER')))
+    const apiKey = process.env.OPENROUTER_API_KEY || ''
+    super('https://openrouter.ai/api/v1', {
+      'Authorization': `Bearer ${apiKey}`,
+      'HTTP-Referer': 'https://literature-tracer.com',
+      'X-Title': 'Literature Tracer'
+    })
     
-    if (!this.apiKey) {
+    console.log('EvaluationService constructor called')
+    console.log('API Key from env:', apiKey ? `${apiKey.substring(0, 10)}...` : 'NOT FOUND')
+    
+    if (!apiKey) {
       console.warn('OPENROUTER_API_KEY is missing from environment variables, will use fallback evaluations')
     }
   }
@@ -46,11 +48,13 @@ export class EvaluationService {
     try {
       console.log('=== EVALUATION SERVICE CALLED ===')
       console.log('Starting literature evaluation for:', request.title)
-      console.log('API Key available:', !!this.apiKey)
-      console.log('API Key length:', this.apiKey.length)
+      
+      const apiKey = process.env.OPENROUTER_API_KEY || ''
+      console.log('API Key available:', !!apiKey)
+      console.log('API Key length:', apiKey.length)
       
       // Check if API key is available
-      if (!this.apiKey) {
+      if (!apiKey) {
         console.log('No API key available, returning fallback evaluation')
         return this.getFallbackEvaluation(request)
       }
@@ -88,7 +92,7 @@ export class EvaluationService {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
+          'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
           'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
           'X-Title': 'Literature Tracing Tool'

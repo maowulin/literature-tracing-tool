@@ -3,7 +3,8 @@ import { z } from "zod"
 import { ExaService, type ExaResult } from "@/lib/exaService"
 import { CrossrefService } from "@/lib/crossrefService"
 import { DeduplicationService } from "@/lib/deduplicationService"
-import { evaluationService, type LiteratureEvaluation } from "@/lib/evaluationService"
+import { evaluationService } from "@/lib/evaluationService"
+import { LiteratureEvaluation } from "@/lib/types"
 import { sentenceSplitService } from "@/lib/sentenceSplitService"
 
 // Define types matching frontend interface
@@ -21,12 +22,19 @@ const LiteratureSchema = z.object({
   citationCount: z.number().optional(),
   // Evaluation fields
   evaluation: z.object({
-    relevanceScore: z.number().min(0).max(10),
-    credibilityScore: z.number().min(0).max(10),
-    impactScore: z.number().min(0).max(10),
-    overallScore: z.number().min(0).max(10),
-    reasoning: z.string(),
-    strengths: z.array(z.string()),
+    relevance: z.object({
+      score: z.number().min(0).max(10),
+      reason: z.string()
+    }),
+    credibility: z.object({
+      score: z.number().min(0).max(10),
+      reason: z.string()
+    }),
+    impact: z.object({
+      score: z.number().min(0).max(10),
+      reason: z.string()
+    }),
+    advantages: z.array(z.string()),
     limitations: z.array(z.string())
   }).optional(),
 })
@@ -64,6 +72,20 @@ const mockLiteratureData: Literature[] = [
     impactFactor: 6.194,
     citationCount: 342,
     abstract: "Background: Uterine artery Doppler screening is used to identify pregnancies at risk of pre-eclampsia. This study aimed to investigate longitudinal changes in uterine artery pulsatility index (PI) and mean arterial pressure (MAP) throughout pregnancy and their association with the development of pre-eclampsia.",
+    evaluation: {
+      relevance: { score: 8, reason: "Highly relevant to medical research and pregnancy care" },
+      credibility: { score: 9, reason: "Published in reputable journal with strong peer review" },
+      impact: { score: 7, reason: "Significant clinical implications for pregnancy monitoring" },
+      advantages: [
+        "Published in high-impact journal",
+        "Large sample size and longitudinal design",
+        "Clinical relevance for pregnancy care"
+      ],
+      limitations: [
+        "Limited to specific population",
+        "Requires specialized equipment for implementation"
+      ]
+    }
   },
   {
     id: 2,
@@ -76,6 +98,21 @@ const mockLiteratureData: Literature[] = [
     impactFactor: 36.615,
     citationCount: 892,
     abstract: "Early disease detection is crucial for improving patient outcomes and reducing healthcare costs. This systematic review evaluates machine learning algorithms used for early detection across various diseases including cancer, cardiovascular disease, and neurological disorders.",
+    evaluation: {
+      relevance: { score: 9, reason: "Comprehensive review highly relevant to ML in healthcare" },
+      credibility: { score: 10, reason: "Published in The Lancet Digital Health with rigorous peer review" },
+      impact: { score: 9, reason: "High citation count and broad clinical applications" },
+      advantages: [
+        "Published in The Lancet Digital Health",
+        "Comprehensive systematic review methodology",
+        "High citation count indicating impact",
+        "Covers multiple disease domains"
+      ],
+      limitations: [
+        "Review nature limits novel findings",
+        "Rapid evolution of ML field may date findings"
+      ]
+    }
   },
 ]
 
@@ -176,7 +213,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Initialize services
-    const exaService = new ExaService(exaApiKey)
+    const exaService = new ExaService()
     const crossrefService = new CrossrefService()
     
     try {

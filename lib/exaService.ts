@@ -1,5 +1,6 @@
-import Exa from 'exa-js';
-import { z } from 'zod';
+import { z } from 'zod'
+import { BaseService } from './base/BaseService'
+import { Literature, APIResponse, SearchOptions } from './types'
 
 // Exa API response schemas
 const ExaResultSchema = z.object({
@@ -13,44 +14,50 @@ const ExaResultSchema = z.object({
   highlightScores: z.array(z.number()).optional(),
   score: z.number().optional(),
   doi: z.string().optional(),
-});
+})
 
 const ExaSearchResponseSchema = z.object({
   results: z.array(ExaResultSchema),
   autopromptString: z.string().optional(),
-});
+})
 
-export type ExaResult = z.infer<typeof ExaResultSchema>;
-export type ExaSearchResponse = z.infer<typeof ExaSearchResponseSchema>;
+export type ExaResult = z.infer<typeof ExaResultSchema>
+export type ExaSearchResponse = z.infer<typeof ExaSearchResponseSchema>
 
-export interface ExaSearchOptions {
-  query: string;
-  numResults?: number;
-  includeDomains?: string[];
-  excludeDomains?: string[];
-  startCrawlDate?: string;
-  endCrawlDate?: string;
-  startPublishedDate?: string;
-  endPublishedDate?: string;
-  useAutoprompt?: boolean;
-  type?: 'neural' | 'keyword';
-  category?: 'research paper' | 'news' | 'company' | 'pdf';
-  includeText?: boolean;
-  includeHighlights?: boolean;
-  includeSummary?: boolean;
+interface ExaSearchOptions extends SearchOptions {
+  query: string
+  type?: 'neural' | 'keyword'
+  useAutoprompt?: boolean
+  numResults?: number
+  startCrawlDate?: string
+  endCrawlDate?: string
+  startPublishedDate?: string
+  endPublishedDate?: string
+  includeDomains?: string[]
+  excludeDomains?: string[]
+  category?: 'research paper' | 'news' | 'company' | 'pdf'
+  includeText?: boolean
+  includeHighlights?: boolean
+  includeSummary?: boolean
 }
 
-export class ExaService {
-  private exa: Exa;
-
-  constructor(apiKey: string) {
-    this.exa = new Exa(apiKey);
+export class ExaService extends BaseService {
+  constructor() {
+    const apiKey = process.env.EXA_API_KEY || ''
+    super('https://api.exa.ai', {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    })
+    
+    if (!apiKey) {
+      console.warn('EXA_API_KEY is missing from environment variables')
+    }
   }
 
   async search(options: ExaSearchOptions): Promise<ExaResult[]> {
     try {
-      // Prepare search options for exa-js SDK
-      const searchOptions: any = {
+      const requestBody = {
+        query: options.query,
         numResults: options.numResults || 5,
         includeDomains: options.includeDomains,
         excludeDomains: options.excludeDomains,
@@ -61,53 +68,35 @@ export class ExaService {
         useAutoprompt: options.useAutoprompt !== false,
         type: options.type || 'neural',
         category: options.category || 'research paper',
-      };
-
-      // Prepare contents options
-      const contentsOptions: any = {};
-      if (options.includeText !== false) {
-        contentsOptions.text = true;
-      }
-      if (options.includeHighlights !== false) {
-        contentsOptions.highlights = true;
-      }
-      if (options.includeSummary) {
-        contentsOptions.summary = true;
+        contents: {
+          text: options.includeText !== false,
+          highlights: options.includeHighlights !== false,
+          summary: options.includeSummary || false
+        }
       }
 
-      // Use searchAndContents with query as first parameter and options as second
-      const response = await this.exa.searchAndContents(options.query, {
-        ...searchOptions,
-        ...contentsOptions,
-      });
-      
-      // Transform the response to match our schema
-      const transformedResults = response.results.map((result: any) => ({
-        id: result.id,
-        title: result.title,
-        url: result.url,
-        publishedDate: result.publishedDate,
-        author: result.author,
-        text: result.text,
-        highlights: result.highlights,
-        highlightScores: result.highlightScores,
-        score: result.score,
-        doi: result.doi, // Extract DOI
-      }));
+      const response = await this.makeRequest<ExaSearchResponse>('/search', {
+        method: 'POST',
+        body: JSON.stringify(requestBody)
+      })
 
-      return ExaResultSchema.array().parse(transformedResults);
+      if (!response.success || !response.data) {
+        throw new Error(response.error || 'Exa search failed')
+      }
+
+      return response.data.results
     } catch (error) {
-      console.error('Exa search error:', error);
-      throw new Error(`Exa search failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Exa search error:', error)
+      throw new Error(`Exa search failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
   async searchMultipleQueries(queries: string[], options?: Omit<ExaSearchOptions, 'query'>): Promise<ExaResult[][]> {
     const searchPromises = queries.map(query => 
       this.searchWithRetry({ ...options, query })
-    );
+    )
     
-    return Promise.all(searchPromises);
+    return Promise.all(searchPromises)
   }
 
   async searchWithRetry(
@@ -115,22 +104,71 @@ export class ExaService {
     maxRetries: number = 3, 
     baseDelay: number = 1000
   ): Promise<ExaResult[]> {
-    let lastError: Error | null = null;
-    
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        return await this.search(options);
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error('Unknown error');
-        
-        if (attempt < maxRetries - 1) {
-          const delay = baseDelay * Math.pow(2, attempt);
-          console.warn(`Exa search attempt ${attempt + 1} failed, retrying in ${delay}ms:`, lastError.message);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      }
+    return this.makeRequest<ExaResult[]>('/search', {
+       method: 'POST',
+       body: JSON.stringify({
+         query: options.query,
+         numResults: options.numResults || 5,
+         includeDomains: options.includeDomains,
+         excludeDomains: options.excludeDomains,
+         startCrawlDate: options.startCrawlDate,
+         endCrawlDate: options.endCrawlDate,
+         startPublishedDate: options.startPublishedDate,
+         endPublishedDate: options.endPublishedDate,
+         useAutoprompt: options.useAutoprompt !== false,
+         type: options.type || 'neural',
+         category: options.category || 'research paper',
+         contents: {
+           text: options.includeText !== false,
+           highlights: options.includeHighlights !== false,
+           summary: options.includeSummary || false
+         }
+       })
+     }, {
+       maxRetries,
+       baseDelay: baseDelay
+     }).then(response => {
+       if (!response.success || !response.data) {
+         throw new Error(response.error || 'Exa search failed')
+       }
+       return response.data
+     })
+  }
+
+  // Convert ExaResult to Literature format
+  convertToLiterature(exaResult: ExaResult, index: number): Literature {
+    return {
+      id: index,
+      title: exaResult.title,
+      authors: exaResult.author ? [exaResult.author] : [],
+      journal: this.extractJournalFromUrl(exaResult.url),
+      year: this.extractYearFromDate(exaResult.publishedDate),
+      doi: exaResult.doi || '',
+      verified: false,
+      abstract: exaResult.text,
+      citationCount: 0,
+      impactFactor: 0
     }
+  }
+
+  private extractJournalFromUrl(url: string): string {
+    try {
+      const domain = new URL(url).hostname
+      return domain.replace('www.', '').replace('.com', '').replace('.org', '')
+    } catch {
+      return 'Unknown Journal'
+    }
+  }
+
+  private extractYearFromDate(publishedDate?: string): number {
+    if (!publishedDate) return new Date().getFullYear()
     
-    throw lastError || new Error('Max retries exceeded');
+    try {
+      return new Date(publishedDate).getFullYear()
+    } catch {
+      return new Date().getFullYear()
+    }
   }
 }
+
+export const exaService = new ExaService()
