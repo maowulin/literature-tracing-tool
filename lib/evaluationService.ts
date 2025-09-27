@@ -32,16 +32,58 @@ export class EvaluationService {
 
   constructor() {
     this.apiKey = process.env.OPENROUTER_API_KEY || ''
+    console.log('EvaluationService constructor called')
+    console.log('API Key from env:', this.apiKey ? `${this.apiKey.substring(0, 10)}...` : 'NOT FOUND')
+    console.log('Full env OPENROUTER_API_KEY:', process.env.OPENROUTER_API_KEY ? 'EXISTS' : 'MISSING')
+    console.log('All env vars:', Object.keys(process.env).filter(key => key.includes('OPENROUTER')))
+    
     if (!this.apiKey) {
-      throw new Error('OPENROUTER_API_KEY is required')
+      console.warn('OPENROUTER_API_KEY is missing from environment variables, will use fallback evaluations')
     }
   }
 
   async evaluateLiterature(request: EvaluationRequest): Promise<LiteratureEvaluation> {
     try {
+      console.log('=== EVALUATION SERVICE CALLED ===')
+      console.log('Starting literature evaluation for:', request.title)
+      console.log('API Key available:', !!this.apiKey)
+      console.log('API Key length:', this.apiKey.length)
+      
+      // Check if API key is available
+      if (!this.apiKey) {
+        console.log('No API key available, returning fallback evaluation')
+        return this.getFallbackEvaluation(request)
+      }
+      
+      // Add alert to make sure we can see this in browser
+      if (typeof window !== 'undefined') {
+        console.log('Running in browser context')
+      } else {
+        console.log('Running in server context')
+      }
+      
       // Create AbortController for timeout
       const controller = new AbortController()
       const timeoutId = setTimeout(() => controller.abort(), 20000) // 20 second timeout
+
+      const requestBody = {
+        model: this.model,
+        messages: [
+          {
+            role: 'system',
+            content: this.buildSystemPrompt()
+          },
+          {
+            role: 'user',
+            content: this.buildEvaluationPrompt(request)
+          }
+        ],
+        max_tokens: 1000,
+        temperature: 0.3
+      }
+
+      console.log('Making API request to:', `${this.baseUrl}/chat/completions`)
+      console.log('Request body:', JSON.stringify(requestBody, null, 2))
 
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
@@ -51,48 +93,66 @@ export class EvaluationService {
           'HTTP-Referer': process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
           'X-Title': 'Literature Tracing Tool'
         },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [
-            {
-              role: 'system',
-              content: this.buildSystemPrompt()
-            },
-            {
-              role: 'user',
-              content: this.buildEvaluationPrompt(request)
-            }
-          ],
-          max_tokens: 1000,
-          temperature: 0.3
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal
       })
 
       clearTimeout(timeoutId)
+
+      console.log('API Response status:', response.status)
+      console.log('API Response ok:', response.ok)
 
       if (!response.ok) {
         const errorText = await response.text()
         console.error(`OpenRouter API error: ${response.status} ${response.statusText}`, errorText)
         
         // Return fallback evaluation instead of throwing error
+        console.log('Returning fallback evaluation due to API error')
         return this.getFallbackEvaluation(request)
       }
 
       const data = await response.json()
+      console.log('API Response data:', JSON.stringify(data, null, 2))
+      
       const content = data.choices?.[0]?.message?.content
 
       if (!content) {
         console.error('No content received from OpenRouter API')
+        console.log('Returning fallback evaluation due to no content')
         return this.getFallbackEvaluation(request)
       }
 
+      console.log('Raw AI response content:', content)
+
       // Try to parse the JSON response
       try {
-        const evaluation = JSON.parse(content)
-        return LiteratureEvaluationSchema.parse(evaluation)
+        // Clean the content by removing markdown code blocks if present
+        let cleanContent = content.trim()
+        
+        // Remove markdown code blocks (```json ... ``` or ``` ... ```)
+        if (cleanContent.startsWith('```')) {
+          const lines = cleanContent.split('\n')
+          // Remove first line (```json or ```)
+          lines.shift()
+          // Remove last line (```)
+          if (lines[lines.length - 1].trim() === '```') {
+            lines.pop()
+          }
+          cleanContent = lines.join('\n').trim()
+        }
+        
+        console.log('Cleaned content for parsing:', cleanContent)
+        
+        const evaluation = JSON.parse(cleanContent)
+        console.log('Parsed evaluation:', evaluation)
+        
+        const validatedEvaluation = LiteratureEvaluationSchema.parse(evaluation)
+        console.log('Successfully validated evaluation:', validatedEvaluation)
+        return validatedEvaluation
       } catch (parseError) {
         console.error('Failed to parse evaluation JSON:', parseError)
+        console.log('Raw content that failed to parse:', content)
+        console.log('Returning fallback evaluation due to parse error')
         return this.getFallbackEvaluation(request)
       }
 
@@ -102,6 +162,7 @@ export class EvaluationService {
       if (error instanceof Error && error.name === 'AbortError') {
         console.error('Evaluation request timed out')
       }
+      console.log('Returning fallback evaluation due to exception')
       return this.getFallbackEvaluation(request)
     }
   }
