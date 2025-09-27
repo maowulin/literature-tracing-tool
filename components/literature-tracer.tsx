@@ -2,20 +2,18 @@
 
 import { useState, useEffect } from "react"
 import { useLiteratureSearch } from "@/hooks/use-literature-search"
-import { useAIHighlight } from "@/hooks/use-ai-highlight"
 import { SearchInput } from "@/components/search/SearchInput"
 import { SearchResults } from "@/components/results/SearchResults"
 
 export default function LiteratureTracer() {
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState("")
   
-  // Use custom hooks for search and AI highlighting
   const {
+    currentResults,
     isSearching,
     hasSearched,
     searchError,
     retryCount,
-    currentResults,
     searchHistory,
     performSearch,
     retrySearch,
@@ -23,12 +21,6 @@ export default function LiteratureTracer() {
     clearHistory,
     loadFromHistory
   } = useLiteratureSearch(query)
-  
-  const {
-    aiHighlightEnabled,
-    highlightRelevantText,
-    toggleAIHighlight
-  } = useAIHighlight()
 
   // Load search history on component mount
   useEffect(() => {
@@ -56,14 +48,11 @@ export default function LiteratureTracer() {
           searchHistory={searchHistory}
           onLoadFromHistory={loadFromHistory}
           onClearHistory={clearHistory}
-          aiHighlightEnabled={aiHighlightEnabled}
-          onToggleAIHighlight={toggleAIHighlight}
         />
 
         {hasSearched && (
           <SearchResults
             results={currentResults}
-            highlightRelevantText={highlightRelevantText}
             searchQuery={query}
           />
         )}

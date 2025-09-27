@@ -16,13 +16,11 @@ interface SearchResults {
 
 interface SearchResultsProps {
   results: SearchResults
-  highlightRelevantText: (text: string, query: string) => Promise<string>
   searchQuery: string
 }
 
 export function SearchResults({ 
   results, 
-  highlightRelevantText, 
   searchQuery 
 }: SearchResultsProps) {
   const api1Count = results.api1.reduce((sum, result) => sum + result.literature.length, 0)
@@ -63,7 +61,6 @@ export function SearchResults({
                     <SentenceResultSection
                       key={`exa-${index}`}
                       result={result}
-                      highlightRelevantText={highlightRelevantText}
                       searchQuery={searchQuery}
                     />
                   ))}
@@ -86,7 +83,6 @@ export function SearchResults({
                     <SentenceResultSection
                       key={`crossref-${index}`}
                       result={result}
-                      highlightRelevantText={highlightRelevantText}
                       searchQuery={searchQuery}
                     />
                   ))}

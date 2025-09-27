@@ -4,6 +4,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Copy, ExternalLink, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
+import { useAIHighlight } from '@/hooks/use-ai-highlight'
+import type { LiteratureContent } from '@/lib/smartHighlightService'
 
 interface Literature {
   id: number
@@ -34,13 +36,11 @@ interface SentenceResult {
 
 interface SentenceResultSectionProps {
   result: SentenceResult
-  highlightRelevantText: (text: string, query: string) => Promise<string>
   searchQuery: string
 }
 
 export function SentenceResultSection({ 
   result, 
-  highlightRelevantText, 
   searchQuery 
 }: SentenceResultSectionProps) {
   const [highlightedSentence, setHighlightedSentence] = useState(result.sentence)
@@ -48,12 +48,13 @@ export function SentenceResultSection({
   const [highlightedAbstracts, setHighlightedAbstracts] = useState<Map<number, string>>(new Map())
   const [highlightedTitles, setHighlightedTitles] = useState<Map<number, string>>(new Map())
   const { toast } = useToast()
+  const { highlightText, smartHighlightLiterature, isAIHighlightActive } = useAIHighlight()
 
   useEffect(() => {
     const updateHighlight = async () => {
       try {
-        const highlighted = await highlightRelevantText(result.sentence, searchQuery)
-        setHighlightedSentence(highlighted)
+        const highlighted = await highlightText(searchQuery, result.sentence)
+        setHighlightedSentence(highlighted || result.sentence)
       } catch (error) {
         console.error('Failed to highlight text:', error)
         setHighlightedSentence(result.sentence)
@@ -61,17 +62,29 @@ export function SentenceResultSection({
     }
     
     updateHighlight()
-  }, [result.sentence, searchQuery, highlightRelevantText])
+  }, [result.sentence, searchQuery, highlightText])
 
-  // Highlight titles
+  // Highlight titles using smart highlighting
   useEffect(() => {
     const highlightTitles = async () => {
       const newHighlightedTitles = new Map<number, string>()
       
       for (const lit of result.literature) {
         try {
-          const highlighted = await highlightRelevantText(lit.title, searchQuery)
-          newHighlightedTitles.set(lit.id, highlighted)
+          if (isAIHighlightActive) {
+            const literatureContent: LiteratureContent = {
+              title: lit.title,
+              abstract: lit.abstract,
+              authors: lit.authors,
+              journal: lit.journal,
+              year: lit.year
+            }
+            const smartResult = await smartHighlightLiterature(searchQuery, literatureContent)
+            newHighlightedTitles.set(lit.id, smartResult.highlightedTitle)
+          } else {
+            const highlighted = await highlightText(searchQuery, lit.title)
+            newHighlightedTitles.set(lit.id, highlighted || lit.title)
+          }
         } catch (error) {
           console.error('Failed to highlight title:', error)
           newHighlightedTitles.set(lit.id, lit.title)
@@ -84,9 +97,9 @@ export function SentenceResultSection({
     if (searchQuery.trim()) {
       highlightTitles()
     }
-  }, [result.literature, highlightRelevantText, searchQuery])
+  }, [result.literature, highlightText, smartHighlightLiterature, searchQuery, isAIHighlightActive])
 
-  // Highlight abstracts when they are expanded
+  // Highlight abstracts when they are expanded using smart highlighting
   useEffect(() => {
     const highlightAbstracts = async () => {
       const newHighlightedAbstracts = new Map<number, string>()
@@ -94,8 +107,20 @@ export function SentenceResultSection({
       for (const lit of result.literature) {
         if (lit.abstract && expandedAbstracts.has(lit.id)) {
           try {
-            const highlighted = await highlightRelevantText(lit.abstract, searchQuery)
-            newHighlightedAbstracts.set(lit.id, highlighted)
+            if (isAIHighlightActive) {
+              const literatureContent: LiteratureContent = {
+                title: lit.title,
+                abstract: lit.abstract,
+                authors: lit.authors,
+                journal: lit.journal,
+                year: lit.year
+              }
+              const smartResult = await smartHighlightLiterature(searchQuery, literatureContent)
+              newHighlightedAbstracts.set(lit.id, smartResult.highlightedAbstract)
+            } else {
+              const highlighted = await highlightText(searchQuery, lit.abstract)
+              newHighlightedAbstracts.set(lit.id, highlighted || lit.abstract)
+            }
           } catch (error) {
             console.error('Failed to highlight abstract:', error)
             newHighlightedAbstracts.set(lit.id, lit.abstract)
@@ -109,7 +134,7 @@ export function SentenceResultSection({
     if (expandedAbstracts.size > 0) {
       highlightAbstracts()
     }
-  }, [expandedAbstracts, result.literature, highlightRelevantText, searchQuery])
+  }, [expandedAbstracts, result.literature, highlightText, smartHighlightLiterature, searchQuery, isAIHighlightActive])
 
   const toggleAbstractExpansion = (litId: number) => {
     setExpandedAbstracts(prev => {

@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
-import { Search, Sparkles, History, Trash2 } from 'lucide-react'
+import { Search, History, Trash2, Sparkles } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { useAIHighlight } from '@/hooks/use-ai-highlight'
 
 interface SearchHistoryItem {
   id: string
@@ -30,8 +31,6 @@ interface SearchInputProps {
   searchHistory: SearchHistoryItem[]
   onLoadFromHistory: (item: SearchHistoryItem) => string
   onClearHistory: () => void
-  aiHighlightEnabled: boolean
-  onToggleAIHighlight: () => void
 }
 
 const sampleQueries = [
@@ -51,11 +50,10 @@ export function SearchInput({
   retryCount,
   searchHistory,
   onLoadFromHistory,
-  onClearHistory,
-  aiHighlightEnabled,
-  onToggleAIHighlight
+  onClearHistory
 }: SearchInputProps) {
   const [inputValue, setInputValue] = useState(value)
+  const { isAIHighlightActive, toggleAIHighlight } = useAIHighlight()
 
   const handleSearch = () => {
     if (inputValue.trim()) {
@@ -96,16 +94,6 @@ export function SearchInput({
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">输入要检索的文本</h2>
               <div className="flex items-center gap-2">
-                <Button
-                  variant={aiHighlightEnabled ? "default" : "outline"}
-                  size="sm"
-                  onClick={onToggleAIHighlight}
-                  className="flex items-center gap-2"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  AI高亮
-                </Button>
-                
                 {searchHistory.length > 0 && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -221,7 +209,7 @@ export function SearchInput({
             <li>• 系统会自动按句子分割文本并检索相关文献</li>
             <li>• 支持中英文混合输入</li>
             <li>• 使用 Ctrl+Enter (Mac: Cmd+Enter) 快速搜索</li>
-            <li>• 开启AI高亮可获得更智能的文本标注</li>
+            <li>• AI高亮功能已默认开启，为您提供智能的文本标注</li>
           </ul>
         </CardContent>
       </Card>

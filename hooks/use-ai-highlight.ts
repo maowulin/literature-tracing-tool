@@ -1,91 +1,135 @@
-import { useState, useCallback } from 'react'
-import { useToast } from '@/components/ui/use-toast'
-import { aiHighlightService, type HighlightOptions } from '@/lib/aiHighlightService'
+import { useState, useCallback, useRef } from 'react';
+import { aiHighlightService, type HighlightOptions } from '@/lib/aiHighlightService';
+import { smartHighlightService, type SmartHighlightOptions, type LiteratureContent } from '@/lib/smartHighlightService';
 
-export function useAIHighlight() {
-  const [aiHighlightEnabled, setAiHighlightEnabled] = useState(false)
+interface UseAIHighlightReturn {
+  isAIHighlightActive: boolean;
+  highlightOptions: HighlightOptions;
+  smartHighlightOptions: SmartHighlightOptions;
+  updateHighlightOptions: (options: Partial<HighlightOptions>) => void;
+  updateSmartHighlightOptions: (options: Partial<SmartHighlightOptions>) => void;
+  highlightText: (query: string, text: string) => Promise<string | null>;
+  smartHighlightLiterature: (query: string, literature: LiteratureContent) => Promise<{
+    highlightedTitle: string;
+    highlightedAbstract: string;
+    overallRelevance: number;
+  }>;
+  clearCache: () => void;
+  getServiceStatus: () => {
+    aiAvailable: boolean;
+    cacheSize: number;
+  };
+}
+
+export function useAIHighlight(): UseAIHighlightReturn {
+  const [isAIHighlightActive] = useState(true); // Always enabled
   const [highlightOptions, setHighlightOptions] = useState<HighlightOptions>({
-    enableAI: false,
-    keywordThreshold: 0.1,
-    semanticThreshold: 0.3,
-    hybridMode: true
-  })
-  const [isHighlighting, setIsHighlighting] = useState(false)
-  const [highlightedTexts, setHighlightedTexts] = useState<Map<string, string>>(new Map())
+    enableAI: true,
+    keywordThreshold: 0.3,
+    semanticThreshold: 0.4,
+    hybridMode: true,
+  });
   
-  const { toast } = useToast()
+  const [smartHighlightOptions, setSmartHighlightOptions] = useState<SmartHighlightOptions>({
+    enableAI: true,
+    relevanceThreshold: 0.3,
+    contextWindow: 3,
+    prioritizeStructure: true,
+  });
 
-  const highlightRelevantText = useCallback(async (text: string, query: string): Promise<string> => {
-    if (!query.trim()) return text
-    
-    const cacheKey = `${query}:${text.substring(0, 100)}`
-    
-    // Check cache first
-    if (highlightedTexts.has(cacheKey)) {
-      return highlightedTexts.get(cacheKey)!
+  const cacheRef = useRef(new Map<string, string>());
+
+  const updateHighlightOptions = useCallback((options: Partial<HighlightOptions>) => {
+    setHighlightOptions(prev => ({ ...prev, ...options }));
+  }, []);
+
+  const updateSmartHighlightOptions = useCallback((options: Partial<SmartHighlightOptions>) => {
+    setSmartHighlightOptions(prev => ({ ...prev, ...options }));
+  }, []);
+
+  const highlightText = useCallback(async (query: string, text: string): Promise<string | null> => {
+    if (!text.trim()) {
+      return text;
     }
-    
-    setIsHighlighting(true)
-    
+
+    const cacheKey = `${query}|||${text}`.substring(0, 200);
+    const cached = cacheRef.current.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     try {
-      const options: HighlightOptions = {
-        ...highlightOptions,
-        enableAI: aiHighlightEnabled
+      const result = await aiHighlightService.highlightText(query, text, highlightOptions);
+      if (result) {
+        cacheRef.current.set(cacheKey, result);
       }
-      
-      const result = await aiHighlightService.highlightText(query, text, options)
-      
-      // Cache the result
-      setHighlightedTexts(prev => new Map(prev).set(cacheKey, result))
-      
-      return result
+      return result;
     } catch (error) {
-      console.error('AI highlighting failed:', error)
-      // Fallback to traditional highlighting
-      return aiHighlightService.highlightText(query, text, { ...highlightOptions, enableAI: false })
-    } finally {
-      setIsHighlighting(false)
+      console.error('Text highlighting failed:', error);
+      return text;
     }
-  }, [highlightOptions, aiHighlightEnabled, highlightedTexts])
+  }, [highlightOptions]);
 
-  const toggleAIHighlight = useCallback(() => {
-    const newEnabled = !aiHighlightEnabled
-    setAiHighlightEnabled(newEnabled)
-    setHighlightOptions(prev => ({ ...prev, enableAI: newEnabled }))
-    
-    // Clear cache when toggling
-    setHighlightedTexts(new Map())
-    
-    toast({
-      description: newEnabled ? 'AI highlighting enabled' : 'AI highlighting disabled'
-    })
-  }, [aiHighlightEnabled, toast])
+  const smartHighlightLiterature = useCallback(async (
+    query: string, 
+    literature: LiteratureContent
+  ): Promise<{
+    highlightedTitle: string;
+    highlightedAbstract: string;
+    overallRelevance: number;
+  }> => {
+    if (!isAIHighlightActive) {
+      return {
+        highlightedTitle: literature.title,
+        highlightedAbstract: literature.abstract || '',
+        overallRelevance: 0,
+      };
+    }
 
-  const updateHighlightOptions = useCallback((newOptions: Partial<HighlightOptions>) => {
-    setHighlightOptions(prev => ({ ...prev, ...newOptions }))
-    // Clear cache when options change
-    setHighlightedTexts(new Map())
-  }, [])
+    const cacheKey = `smart_${query}|||${literature.title}|||${literature.abstract || ''}`.substring(0, 200);
+    const cached = cacheRef.current.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached);
+    }
 
-  const clearHighlightCache = useCallback(() => {
-    setHighlightedTexts(new Map())
-  }, [])
+    try {
+      const result = await smartHighlightService.analyzeAndHighlight(query, literature, smartHighlightOptions);
+      const returnValue = {
+        highlightedTitle: result.highlightedTitle,
+        highlightedAbstract: result.highlightedAbstract,
+        overallRelevance: result.overallRelevance,
+      };
+      
+      cacheRef.current.set(cacheKey, JSON.stringify(returnValue));
+      return returnValue;
+    } catch (error) {
+      console.error('Smart literature highlighting failed:', error);
+      return {
+        highlightedTitle: literature.title,
+        highlightedAbstract: literature.abstract || '',
+        overallRelevance: 0,
+      };
+    }
+  }, [isAIHighlightActive, smartHighlightOptions]);
+
+  const clearCache = useCallback(() => {
+    cacheRef.current.clear();
+    aiHighlightService.clearCache();
+  }, []);
+
+  const getServiceStatus = useCallback(() => {
+    return aiHighlightService.getServiceStatus();
+  }, []);
 
   return {
-    // State
-    aiHighlightEnabled,
+    isAIHighlightActive,
     highlightOptions,
-    isHighlighting,
-    highlightedTexts,
-    
-    // Actions
-    highlightRelevantText,
-    toggleAIHighlight,
+    smartHighlightOptions,
     updateHighlightOptions,
-    clearHighlightCache,
-    
-    // Setters
-    setAiHighlightEnabled,
-    setHighlightOptions
-  }
+    updateSmartHighlightOptions,
+    highlightText,
+    smartHighlightLiterature,
+    clearCache,
+    getServiceStatus,
+  };
 }
