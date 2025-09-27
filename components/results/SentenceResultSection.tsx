@@ -200,14 +200,6 @@ export function SentenceResultSection({
                     <div className="flex items-center justify-between">
                       <div className="text-sm font-medium text-muted-foreground">摘要</div>
                       <div className="flex items-center gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => copyToClipboard(lit.abstract || '', 'Abstract')}
-                          className="h-7 px-2"
-                        >
-                          <Copy className="w-3 h-3 mr-1" /> 复制摘要
-                        </Button>
                         {isAbstractLong(lit.abstract) && (
                           <Button
                             variant="ghost"
@@ -226,6 +218,14 @@ export function SentenceResultSection({
                             )}
                           </Button>
                         )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => copyToClipboard(lit.abstract || '', 'Abstract')}
+                          className="h-7 px-2"
+                        >
+                          <Copy className="w-3 h-3 mr-1" /> 复制摘要
+                        </Button>
                       </div>
                     </div>
 
