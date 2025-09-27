@@ -126,7 +126,7 @@ export function LiteratureTracer() {
     setHasSearched(true)
 
     try {
-      const response = await fetch("/api/search-simple", {
+      const response = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: query.trim() }),
@@ -253,6 +253,11 @@ export function LiteratureTracer() {
     const abstractText = literature.abstract || ""
     const shouldTruncate = abstractText.length > 300
     const displayText = isExpanded || !shouldTruncate ? abstractText : truncateText(abstractText)
+    
+    // Handle highlighted abstract with expand/collapse logic
+    const finalDisplayText = highlightedAbstract 
+      ? (isExpanded || !shouldTruncate ? highlightedAbstract : truncateText(highlightedAbstract.replace(/<[^>]*>/g, '')))
+      : displayText
 
     return (
       <Card className="border border-border hover:shadow-md transition-shadow">
@@ -390,7 +395,7 @@ export function LiteratureTracer() {
                 </div>
                 <div 
                   className="text-sm text-muted-foreground leading-relaxed break-words overflow-hidden max-w-full"
-                  dangerouslySetInnerHTML={{ __html: highlightedAbstract || displayText }}
+                  dangerouslySetInnerHTML={{ __html: finalDisplayText }}
                 />
               </div>
             )}
@@ -479,7 +484,7 @@ export function LiteratureTracer() {
             ...highlightOptions,
             enableAI: aiHighlightEnabled
           });
-          setHighlightedAbstracts(results);
+          setHighlightedAbstracts(results.filter((result): result is string => result !== null));
         } else {
           setHighlightedAbstracts(sentenceResult.literature.map(lit => lit.abstract || ""));
         }
