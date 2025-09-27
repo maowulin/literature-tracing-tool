@@ -44,6 +44,9 @@ export function SentenceResultSection({
   searchQuery 
 }: SentenceResultSectionProps) {
   const [highlightedSentence, setHighlightedSentence] = useState(result.sentence)
+  const [expandedAbstracts, setExpandedAbstracts] = useState<Set<number>>(new Set())
+  const [highlightedAbstracts, setHighlightedAbstracts] = useState<Map<number, string>>(new Map())
+  const [highlightedTitles, setHighlightedTitles] = useState<Map<number, string>>(new Map())
   const { toast } = useToast()
 
   useEffect(() => {
@@ -59,6 +62,74 @@ export function SentenceResultSection({
     
     updateHighlight()
   }, [result.sentence, searchQuery, highlightRelevantText])
+
+  // Highlight titles
+  useEffect(() => {
+    const highlightTitles = async () => {
+      const newHighlightedTitles = new Map<number, string>()
+      
+      for (const lit of result.literature) {
+        try {
+          const highlighted = await highlightRelevantText(lit.title, searchQuery)
+          newHighlightedTitles.set(lit.id, highlighted)
+        } catch (error) {
+          console.error('Failed to highlight title:', error)
+          newHighlightedTitles.set(lit.id, lit.title)
+        }
+      }
+      
+      setHighlightedTitles(newHighlightedTitles)
+    }
+    
+    if (searchQuery.trim()) {
+      highlightTitles()
+    }
+  }, [result.literature, highlightRelevantText, searchQuery])
+
+  // Highlight abstracts when they are expanded
+  useEffect(() => {
+    const highlightAbstracts = async () => {
+      const newHighlightedAbstracts = new Map<number, string>()
+      
+      for (const lit of result.literature) {
+        if (lit.abstract && expandedAbstracts.has(lit.id)) {
+          try {
+            const highlighted = await highlightRelevantText(lit.abstract, searchQuery)
+            newHighlightedAbstracts.set(lit.id, highlighted)
+          } catch (error) {
+            console.error('Failed to highlight abstract:', error)
+            newHighlightedAbstracts.set(lit.id, lit.abstract)
+          }
+        }
+      }
+      
+      setHighlightedAbstracts(newHighlightedAbstracts)
+    }
+    
+    if (expandedAbstracts.size > 0) {
+      highlightAbstracts()
+    }
+  }, [expandedAbstracts, result.literature, highlightRelevantText, searchQuery])
+
+  const toggleAbstractExpansion = (litId: number) => {
+    setExpandedAbstracts(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(litId)) {
+        newSet.delete(litId)
+      } else {
+        newSet.add(litId)
+      }
+      return newSet
+    })
+  }
+
+  const isAbstractLong = (abstract: string) => {
+    return abstract.length > 200
+  }
+
+  const getTruncatedAbstract = (abstract: string) => {
+    return abstract.length > 200 ? abstract.substring(0, 200) + '...' : abstract
+  }
 
   const copyToClipboard = async (text: string, type: string) => {
     try {
@@ -112,9 +183,15 @@ export function SentenceResultSection({
                 {/* Title and Basic Info */}
                 <div className="space-y-2">
                   <div className="flex items-start justify-between gap-2">
-                    <h4 className="font-semibold text-sm leading-tight flex-1">
-                      {lit.title}
-                    </h4>
+                    <div className="font-semibold text-sm leading-tight flex-1 break-words">
+                      {highlightedTitles.has(lit.id) ? (
+                        <div dangerouslySetInnerHTML={{ 
+                          __html: highlightedTitles.get(lit.id)! 
+                        }} />
+                      ) : (
+                        lit.title
+                      )}
+                    </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       {lit.verified && (
                         <CheckCircle className="w-4 h-4 text-green-600" />
@@ -131,9 +208,9 @@ export function SentenceResultSection({
                   </div>
                   
                   <div className="text-sm text-muted-foreground">
-                    <div>{lit.authors.join(', ')}</div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span>{lit.journal} ({lit.year})</span>
+                    <div className="break-words">{lit.authors.join(', ')}</div>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span className="break-words">{lit.journal} ({lit.year})</span>
                       {lit.impactFactor && (
                         <Badge variant="secondary" className="text-xs">
                           IF: {lit.impactFactor}
@@ -150,8 +227,8 @@ export function SentenceResultSection({
 
                 {/* DOI and Actions */}
                 <div className="flex items-center gap-2 text-xs">
-                  <span className="text-muted-foreground">DOI:</span>
-                  <code className="bg-muted px-1 py-0.5 rounded text-xs flex-1">
+                  <span className="text-muted-foreground flex-shrink-0">DOI:</span>
+                  <code className="bg-muted px-1 py-0.5 rounded text-xs flex-1 break-all min-w-0">
                     {lit.doi}
                   </code>
                   <Button
@@ -177,18 +254,40 @@ export function SentenceResultSection({
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium">摘要</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => copyToClipboard(lit.abstract!, 'Abstract')}
-                        className="h-6 w-6 p-0"
-                      >
-                        <Copy className="w-3 h-3" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        {isAbstractLong(lit.abstract) && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => toggleAbstractExpansion(lit.id)}
+                            className="h-6 px-2 text-xs"
+                          >
+                            {expandedAbstracts.has(lit.id) ? '收起' : '展开'}
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => copyToClipboard(lit.abstract!, 'Abstract')}
+                          className="h-6 w-6 p-0"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </Button>
+                      </div>
                     </div>
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      {lit.abstract}
-                    </p>
+                    <div className="text-sm text-muted-foreground leading-relaxed break-words whitespace-pre-wrap">
+                      {expandedAbstracts.has(lit.id) ? (
+                        highlightedAbstracts.has(lit.id) ? (
+                          <div dangerouslySetInnerHTML={{ 
+                            __html: highlightedAbstracts.get(lit.id)! 
+                          }} />
+                        ) : (
+                          lit.abstract
+                        )
+                      ) : (
+                        getTruncatedAbstract(lit.abstract)
+                      )}
+                    </div>
                   </div>
                 )}
 
