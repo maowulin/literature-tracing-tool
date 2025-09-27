@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Copy, ExternalLink, CheckCircle, AlertCircle } from 'lucide-react'
+import { Copy, ExternalLink, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 
 interface Literature {
@@ -260,9 +260,19 @@ export function SentenceResultSection({
                             variant="ghost"
                             size="sm"
                             onClick={() => toggleAbstractExpansion(lit.id)}
-                            className="h-6 px-2 text-xs"
+                            className="h-6 px-2 text-xs flex items-center gap-1"
                           >
-                            {expandedAbstracts.has(lit.id) ? '收起' : '展开'}
+                            {expandedAbstracts.has(lit.id) ? (
+                              <>
+                                收起
+                                <ChevronUp className="w-3 h-3" />
+                              </>
+                            ) : (
+                              <>
+                                展开
+                                <ChevronDown className="w-3 h-3" />
+                              </>
+                            )}
                           </Button>
                         )}
                         <Button
@@ -302,7 +312,7 @@ export function SentenceResultSection({
                     <div className="grid grid-cols-3 gap-3">
                       <div className="text-center">
                         <div className={`text-lg font-bold rounded-md px-2 py-1 ${getScoreColor(lit.evaluation.relevance.score)}`}>
-                          {lit.evaluation.relevance.score}/10
+                          {Math.round(lit.evaluation.relevance.score)}/10
                         </div>
                         <div className="text-xs text-muted-foreground mt-1">
                           相关性 ({getScoreLabel(lit.evaluation.relevance.score)})
@@ -310,7 +320,7 @@ export function SentenceResultSection({
                       </div>
                       <div className="text-center">
                         <div className={`text-lg font-bold rounded-md px-2 py-1 ${getScoreColor(lit.evaluation.credibility.score)}`}>
-                          {lit.evaluation.credibility.score}/10
+                          {Math.round(lit.evaluation.credibility.score)}/10
                         </div>
                         <div className="text-xs text-muted-foreground mt-1">
                           可信度 ({getScoreLabel(lit.evaluation.credibility.score)})
@@ -318,7 +328,7 @@ export function SentenceResultSection({
                       </div>
                       <div className="text-center">
                         <div className={`text-lg font-bold rounded-md px-2 py-1 ${getScoreColor(lit.evaluation.impact.score)}`}>
-                          {lit.evaluation.impact.score}/10
+                          {Math.round(lit.evaluation.impact.score)}/10
                         </div>
                         <div className="text-xs text-muted-foreground mt-1">
                           影响力 ({getScoreLabel(lit.evaluation.impact.score)})
