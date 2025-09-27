@@ -364,7 +364,8 @@ class SmartHighlightService {
   private applyHighlighting(text: string, query: string, level: ContentSegment['highlightLevel']): string {
     if (level === 'none') return text;
     
-    const queryWords = query.toLowerCase().split(/\s+/).filter(word => word.length > 2);
+    // Extract meaningful keywords from query, including Chinese terms
+    const queryWords = this.extractKeywords(query);
     let highlightedText = text;
     
     const highlightClass = {
@@ -374,11 +375,54 @@ class SmartHighlightService {
     }[level];
     
     for (const word of queryWords) {
-      const regex = new RegExp(`(${word})`, 'gi');
+      // Escape special regex characters
+      const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(${escapedWord})`, 'gi');
       highlightedText = highlightedText.replace(regex, `<mark class="${highlightClass}">$1</mark>`);
     }
     
     return highlightedText;
+  }
+
+  /**
+   * Extract meaningful keywords from query text
+   */
+  private extractKeywords(query: string): string[] {
+    const keywords: string[] = [];
+    
+    // Extract Chinese technical terms (2-6 characters, avoiding overly long matches)
+    const chineseTerms = query.match(/[\u4e00-\u9fff]{2,6}/g) || [];
+    // Filter and add meaningful Chinese terms
+    for (const term of chineseTerms) {
+      if (term.length >= 2) {
+        keywords.push(term);
+        // Also add shorter meaningful substrings for better matching
+        if (term.length > 3) {
+          for (let i = 0; i <= term.length - 2; i++) {
+            const substring = term.substring(i, i + 2);
+            if (substring.length === 2) {
+              keywords.push(substring);
+            }
+          }
+        }
+      }
+    }
+    
+    // Extract English words (3+ characters)
+    const englishWords = query.match(/[a-zA-Z]{3,}/g) || [];
+    keywords.push(...englishWords);
+    
+    // Add common technical terms that might be split
+    const commonTerms = ['深度学习', '医学图像', '图像分析', '机器学习', '神经网络', '人工智能'];
+    for (const term of commonTerms) {
+      if (query.includes(term)) {
+        keywords.push(term);
+      }
+    }
+    
+    // Remove duplicates and filter out common stop words
+    const stopWords = new Set(['的', '在', '中', '和', '与', '及', '等', '或', '是', '应用', 'the', 'in', 'of', 'and', 'or', 'for', 'with']);
+    return [...new Set(keywords)].filter(word => !stopWords.has(word.toLowerCase()) && word.length >= 2);
   }
 
   /**
