@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { SentenceResultSection } from './SentenceResultSection'
@@ -21,7 +22,23 @@ export function SearchResults({
   results, 
   searchQuery 
 }: SearchResultsProps) {
+  const [expandedSections, setExpandedSections] = useState<Set<number>>(
+    new Set(results.results.length > 0 ? [0] : [])
+  )
+  
   const totalCount = results.results.reduce((sum, result) => sum + result.literature.length, 0)
+
+  const toggleSection = (index: number) => {
+    setExpandedSections(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(index)) {
+        newSet.delete(index)
+      } else {
+        newSet.add(index)
+      }
+      return newSet
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -42,6 +59,8 @@ export function SearchResults({
                   key={`result-${index}`}
                   result={result}
                   searchQuery={searchQuery}
+                  isExpanded={expandedSections.has(index)}
+                  onToggle={() => toggleSection(index)}
                 />
               ))}
             </div>

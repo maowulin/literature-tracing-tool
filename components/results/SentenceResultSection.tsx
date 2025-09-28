@@ -37,11 +37,15 @@ interface SentenceResult {
 interface SentenceResultSectionProps {
   result: SentenceResult
   searchQuery: string
+  isExpanded?: boolean
+  onToggle?: () => void
 }
 
 export function SentenceResultSection({ 
   result, 
-  searchQuery 
+  searchQuery,
+  isExpanded = false,
+  onToggle
 }: SentenceResultSectionProps) {
   const [highlightedSentence, setHighlightedSentence] = useState(result.sentence)
   const [expandedAbstracts, setExpandedAbstracts] = useState<Set<number>>(new Set())
@@ -104,20 +108,50 @@ export function SentenceResultSection({
   }
 
   return (
-    <Card className="mb-6">
-      <CardHeader>
-        <CardTitle className="text-base flex items-start gap-2">
-          <span className="bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center text-sm font-medium flex-shrink-0 mt-0.5">
-            {result.sentenceIndex + 1}
+    <Card className="mb-6 border-2 transition-all duration-200 hover:shadow-md">
+      <CardHeader 
+        className={`transition-all duration-200 ${
+          onToggle 
+            ? "cursor-pointer hover:bg-gray-50/80 active:bg-gray-100/80" 
+            : ""
+        } ${isExpanded ? "border-b border-gray-200" : ""}`}
+        onClick={onToggle}
+      >
+        <CardTitle className="text-base flex items-start gap-3">
+          <span className="bg-primary text-primary-foreground rounded-full w-7 h-7 flex items-center justify-center text-sm font-medium flex-shrink-0 mt-0.5 shadow-sm">
+            {result.sentenceIndex}
           </span>
           <div 
-            className="flex-1 leading-relaxed"
+            className="flex-1 leading-relaxed text-gray-800"
             dangerouslySetInnerHTML={{ __html: highlightedSentence }}
           />
+          {onToggle && (
+            <div className="flex items-center gap-2 flex-shrink-0 mt-0.5">
+              <Badge variant="outline" className="text-xs">
+                {result.literature.length} 篇文献
+              </Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 rounded-full hover:bg-gray-200/80 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onToggle()
+                }}
+              >
+                {isExpanded ? (
+                  <ChevronUp className="w-4 h-4 text-gray-600" />
+                ) : (
+                  <ChevronDown className="w-4 h-4 text-gray-600" />
+                )}
+              </Button>
+            </div>
+          )}
         </CardTitle>
       </CardHeader>
       
-      <CardContent className="space-y-4">
+      {isExpanded && (
+        <CardContent className="space-y-4 animate-in slide-in-from-top-2 duration-200">
         {result.literature.map((lit) => (
           <Card key={lit.id} className="border-l-4 border-l-blue-500">
             <CardContent className="p-4">
@@ -316,7 +350,8 @@ export function SentenceResultSection({
             </CardContent>
           </Card>
         ))}
-      </CardContent>
+        </CardContent>
+      )}
     </Card>
   )
 }
