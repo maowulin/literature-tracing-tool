@@ -8,8 +8,7 @@ interface SentenceResult {
 }
 
 interface SearchResults {
-  api1: SentenceResult[]
-  api2: SentenceResult[]
+  results: SentenceResult[]
 }
 
 interface SearchHistoryItem {
@@ -25,8 +24,7 @@ export function useLiteratureSearch(query: string) {
   const [searchError, setSearchError] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
   const [currentResults, setCurrentResults] = useState<SearchResults>({
-    api1: [],
-    api2: [],
+    results: [],
   })
   const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([])
   
