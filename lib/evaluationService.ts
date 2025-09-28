@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { BaseService } from './base/BaseService'
 import { LiteratureEvaluation } from './types'
+import { calculateRelevanceScore } from './utils/common'
 
 // Literature evaluation result schema
 const LiteratureEvaluationSchema = z.object({
@@ -175,30 +176,58 @@ export class EvaluationService extends BaseService {
   }
 
   private getFallbackEvaluation(request: EvaluationRequest): LiteratureEvaluation {
-    // Simple heuristic fallback using available metadata
-    const yearWeight = Math.max(0, (new Date().getFullYear() - (request.year || new Date().getFullYear())))
-    const citationScore = Math.min(10, Math.max(0, (request.citationCount || 0) / 100))
-    const impactScore = Math.min(10, Math.max(0, (request.impactFactor || 0) / 5))
+    // Heuristic fallback using available metadata and keyword relevance
+    const currentYear = new Date().getFullYear()
+    const query = request.query
+    const title = request.title
+    const abstract = request.abstract
 
-    const relevanceScore = 6 // default moderate relevance
-    const credibilityScore = Math.round((citationScore + impactScore) / 2)
-    const impactFinalScore = Math.round((citationScore + impactScore) / 2)
+    // Relevance from keyword overlap in title/abstract (0-10)
+    const keywordRelevance = calculateRelevanceScore(query, title, abstract)
+
+    // Normalize metrics to 0-1
+    const citationNorm = Math.min(1, Math.max(0, (request.citationCount ?? 0) / 100))
+    const impactNorm = Math.min(1, Math.max(0, (request.impactFactor ?? 0) / 10))
+    const recencyNorm = (() => {
+      if (!request.year) return 0.5
+      const age = currentYear - request.year
+      // Map 0-20 years to 1-0 linearly, clamp
+      return Math.max(0, Math.min(1, 1 - age / 20))
+    })()
+
+    // Compute scores (0-10)
+    const relevanceScore = Math.max(0, Math.min(10, keywordRelevance * 0.7 + (impactNorm * 10) * 0.1 + (citationNorm * 10) * 0.2))
+    const credibilityScore = Math.max(0, Math.min(10, (citationNorm * 0.5 + impactNorm * 0.4 + recencyNorm * 0.1) * 10))
+    const impactFinalScore = Math.max(0, Math.min(10, (citationNorm * 0.7 + impactNorm * 0.3) * 10))
+
+    // Build advantages/limitations
+    const advantages: string[] = []
+    const limitations: string[] = []
+
+    if ((request.citationCount ?? 0) >= 50) advantages.push('High citation count')
+    if ((request.impactFactor ?? 0) >= 5) advantages.push('High journal impact factor')
+    if (recencyNorm >= 0.7) advantages.push('Recent publication')
+
+    if (!abstract) limitations.push('Abstract missing')
+    if (!request.impactFactor) limitations.push('Impact factor unavailable')
+    if ((request.citationCount ?? 0) === 0) limitations.push('Citation count unavailable')
+    if (keywordRelevance < 4) limitations.push('Low keyword match to query')
 
     return {
       relevance: {
         score: relevanceScore,
-        reason: 'Fallback evaluation based on limited metadata'
+        reason: 'Estimated relevance from keyword match and basic metadata'
       },
       credibility: {
         score: credibilityScore,
-        reason: 'Estimated credibility from citation and impact factor'
+        reason: 'Estimated credibility from citations, impact factor, and recency'
       },
       impact: {
         score: impactFinalScore,
-        reason: 'Estimated impact from citation and impact factor'
+        reason: 'Estimated impact from citations and journal impact factor'
       },
-      advantages: ['Academic paper'],
-      limitations: ['LLM evaluation unavailable']
+      advantages: advantages.length > 0 ? advantages : ['Academic paper'],
+      limitations: limitations.length > 0 ? limitations : ['LLM evaluation unavailable']
     }
   }
 
@@ -226,8 +255,22 @@ export class EvaluationService extends BaseService {
       return await Promise.all(evaluationPromises)
     } catch (error) {
       console.error('Batch literature evaluation failed:', error)
-      // Return default evaluations for all literature
-      return literatureList.map(() => this.getDefaultEvaluation())
+      // Fallback individually using heuristic to avoid identical scores
+      return literatureList.map((lit) =>
+        this.getFallbackEvaluation({
+          query,
+          title: lit.title,
+          authors: lit.authors,
+          journal: lit.journal,
+          year: lit.year,
+          abstract: lit.abstract,
+          doi: lit.doi,
+          citationCount: lit.citationCount,
+          impactFactor: lit.impactFactor,
+          contextIntent: (lit as EvaluationRequest).contextIntent,
+          contextKeywords: (lit as EvaluationRequest).contextKeywords,
+        })
+      )
     }
   }
 

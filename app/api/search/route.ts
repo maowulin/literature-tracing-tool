@@ -4,7 +4,6 @@ import { ExaService, type ExaResult } from "@/lib/exaService";
 import { CrossrefService, type CrossrefWork } from "@/lib/crossrefService";
 import { DeduplicationService } from "@/lib/deduplicationService";
 import { evaluationService } from "@/lib/evaluationService";
-import { LiteratureEvaluation } from "@/lib/types";
 import { sentenceSplitService } from "@/lib/sentenceSplitService";
 
 // Define types matching frontend interface
@@ -64,27 +63,27 @@ type SearchRequest = z.infer<typeof SearchRequestSchema>;
 
 // Helper function to convert Crossref results to Literature format
 function convertCrossrefToLiterature(
-   crossrefWork: CrossrefWork,
-   id: number,
-   query: string
- ): Literature {
-   const crossrefService = new CrossrefService();
-   const title = crossrefService.extractTitle(crossrefWork);
-   const abstract = crossrefWork.abstract || undefined;
-   return {
-     id,
-     title,
-     authors: crossrefService.formatAuthors(crossrefWork.author),
-     journal: crossrefService.extractJournal(crossrefWork),
-     year: crossrefService.extractYear(crossrefWork),
-     doi: crossrefWork.DOI || "N/A",
-     verified: true,
-     abstract,
-     citationCount: crossrefWork["is-referenced-by-count"] || undefined,
-     highlightedTitle: wrapMarksByQuery(query, title),
-     highlightedAbstract: wrapMarksByQuery(query, abstract),
-   };
- }
+  crossrefWork: CrossrefWork,
+  id: number,
+  query: string
+): Literature {
+  const crossrefService = new CrossrefService();
+  const title = crossrefService.extractTitle(crossrefWork);
+  const abstract = crossrefWork.abstract || undefined;
+  return {
+    id,
+    title,
+    authors: crossrefService.formatAuthors(crossrefWork.author),
+    journal: crossrefService.extractJournal(crossrefWork),
+    year: crossrefService.extractYear(crossrefWork),
+    doi: crossrefWork.DOI || "N/A",
+    verified: true,
+    abstract,
+    citationCount: crossrefWork["is-referenced-by-count"] || undefined,
+    highlightedTitle: wrapMarksByQuery(query, title),
+    highlightedAbstract: wrapMarksByQuery(query, abstract),
+  };
+}
 
 // Helper function to convert Exa results to Literature format
 function convertExaResultToLiterature(
@@ -100,16 +99,20 @@ function convertExaResultToLiterature(
 
   // Extract authors from author field, try to parse multiple authors, or use placeholder
   let authors: string[] = ["Unknown Author"];
-  
+
   if (exaResult.author && exaResult.author.trim()) {
     // Try to split multiple authors by common separators
     const authorStr = exaResult.author.trim();
-    if (authorStr.includes(',') || authorStr.includes(';') || authorStr.includes(' and ')) {
+    if (
+      authorStr.includes(",") ||
+      authorStr.includes(";") ||
+      authorStr.includes(" and ")
+    ) {
       // Split by common author separators and clean up
       authors = authorStr
         .split(/[,;]|\s+and\s+/i)
-        .map(author => author.trim())
-        .filter(author => author.length > 0 && !author.match(/^\d+$/)); // Remove empty strings and standalone numbers
+        .map((author) => author.trim())
+        .filter((author) => author.length > 0 && !author.match(/^\d+$/)); // Remove empty strings and standalone numbers
     } else {
       authors = [authorStr];
     }
@@ -120,13 +123,22 @@ function convertExaResultToLiterature(
     title: exaResult.title.substring(0, 50) + "...",
     originalAuthor: exaResult.author,
     processedAuthors: authors,
-    hasAuthor: !!exaResult.author
+    hasAuthor: !!exaResult.author,
   });
 
-  // Extract DOI from URL if it's a DOI link, otherwise use URL
-  const doi = exaResult.url.includes("doi.org")
-    ? exaResult.url.replace("https://doi.org/", "")
-    : exaResult.url;
+  // Extract DOI from URL if possible; otherwise use URL
+  const doi = (() => {
+    const lower = exaResult.url.toLowerCase().trim();
+    const match = lower.match(/10\.[0-9]{4,9}\/[\w.()\-/:;+#]+/i);
+    if (match && match[0]) {
+      return match[0];
+    }
+    const stripped = lower.replace(/^https?:\/\/(dx\.)?doi\.org\//, "");
+    if (stripped.startsWith("10.")) {
+      return stripped;
+    }
+    return exaResult.url;
+  })();
 
   // Extract journal name from URL or use placeholder
   const journal = extractJournalFromUrl(exaResult.url);
@@ -184,12 +196,14 @@ export async function POST(request: NextRequest) {
     const validatedRequest = SearchRequestSchema.parse(body);
 
     // Use AI-powered analyze and split
-    const analysis = await sentenceSplitService.analyzeAndSplit(validatedRequest.text);
+    const analysis = await sentenceSplitService.analyzeAndSplit(
+      validatedRequest.text
+    );
     const sentences = analysis.originalSentences;
     const englishSentences = analysis.englishSentences || [];
-    console.log('AnalyzeAndSplit context:', {
+    console.log("AnalyzeAndSplit context:", {
       language: analysis.language,
-      intent: (analysis.intent || '').slice(0, 100),
+      intent: (analysis.intent || "").slice(0, 100),
       keywords: analysis.keywords,
       originalCount: sentences.length,
       englishCount: englishSentences.length,
@@ -238,11 +252,20 @@ export async function POST(request: NextRequest) {
 
           const originalStatus = settled[0]?.status;
           const englishStatus = settled[1]?.status;
-          const originalCount = settled[0]?.status === 'fulfilled' ? (settled[0] as PromiseFulfilledResult<ExaResult[]>).value.length : 0;
-          const englishCount = settled[1]?.status === 'fulfilled' ? (settled[1] as PromiseFulfilledResult<ExaResult[]>).value.length : 0;
+          const originalCount =
+            settled[0]?.status === "fulfilled"
+              ? (settled[0] as PromiseFulfilledResult<ExaResult[]>).value.length
+              : 0;
+          const englishCount =
+            settled[1]?.status === "fulfilled"
+              ? (settled[1] as PromiseFulfilledResult<ExaResult[]>).value.length
+              : 0;
 
           const merged = settled
-            .filter((r): r is PromiseFulfilledResult<ExaResult[]> => r.status === 'fulfilled')
+            .filter(
+              (r): r is PromiseFulfilledResult<ExaResult[]> =>
+                r.status === "fulfilled"
+            )
             .flatMap((r) => r.value);
 
           const seen = new Set<string>();
@@ -292,48 +315,11 @@ export async function POST(request: NextRequest) {
           const deduplicatedLiterature =
             DeduplicationService.deduplicate(literature);
 
-          // Step 2.1: LLM evaluation for quality filtering
-          const evaluatedLiterature = await Promise.all(
-            deduplicatedLiterature.map(async (lit) => {
-              try {
-                const evaluationRequest = {
-                  query: sentence,
-                  title: lit.title,
-                  authors: lit.authors,
-                  journal: lit.journal,
-                  year: lit.year,
-                  abstract: lit.abstract,
-                  doi: lit.doi,
-                  citationCount: lit.citationCount,
-                  impactFactor: lit.impactFactor,
-                  contextIntent: analysis.intent,
-                  contextKeywords: analysis.keywords,
-                };
-                const evaluation = await evaluationService.evaluateLiterature(
-                  evaluationRequest
-                );
-                return { ...lit, evaluation };
-              } catch (error) {
-                console.error(
-                  `Evaluation failed for literature ${lit.id}:`,
-                  error
-                );
-                return lit; // Return without evaluation if it fails
-              }
-            })
-          );
-
-          // Step 2.2: Filter by quality scores (keep high-quality papers)
-          // Sort by quality without filtering - keep all literature
-          const sortedLiterature =
-            DeduplicationService.sortByRelevanceAndQuality(
-              evaluatedLiterature
-            );
-
+          // NOTE: defer evaluation until after Crossref enhancement to leverage enriched metadata
           return {
             sentence,
             index,
-            literature: sortedLiterature, // Return all literature sorted by quality
+            literature: deduplicatedLiterature,
           };
         })
       );
@@ -342,55 +328,71 @@ export async function POST(request: NextRequest) {
       const enhancedExaResults = await Promise.all(
         evaluatedExaResults.map(async ({ sentence, index, literature }) => {
           try {
-            console.log(`Crossref metadata enhancement for sentence ${index + 1}:`, {
-              sentence: sentence.substring(0, 50) + "...",
-              literatureCount: literature.length,
-            });
+            console.log(
+              `Crossref metadata enhancement for sentence ${index + 1}:`,
+              {
+                sentence: sentence.substring(0, 50) + "...",
+                literatureCount: literature.length,
+              }
+            );
 
             // Enhance each literature item with Crossref metadata if needed
             const enhancedLiterature = await Promise.all(
               literature.map(async (lit) => {
                 // Check if literature has missing critical metadata
-                const isUnknownJournal = !lit.journal || /unknown/i.test(lit.journal);
+                const isUnknownJournal =
+                  !lit.journal || /unknown/i.test(lit.journal);
                 const needsEnhancement =
-                  (!lit.authors.length || lit.authors.includes("Unknown Author")) ||
+                  !lit.authors.length ||
+                  lit.authors.includes("Unknown Author") ||
                   isUnknownJournal ||
                   !lit.doi ||
                   !lit.abstract;
 
                 if (!needsEnhancement) {
-                  console.log(`Literature ${lit.id} has complete metadata, skipping enhancement`);
+                  console.log(
+                    `Literature ${lit.id} has complete metadata, skipping enhancement`
+                  );
                   return lit;
                 }
 
-                console.log(`Enhancing literature ${lit.id} with missing metadata:`, {
-                  title: lit.title.substring(0, 50) + "...",
-                  missingAuthors: !lit.authors.length || lit.authors.includes("Unknown Author"),
-                  missingJournal: isUnknownJournal,
-                  missingDoi: !lit.doi,
-                  missingAbstract: !lit.abstract,
-                });
+                console.log(
+                  `Enhancing literature ${lit.id} with missing metadata:`,
+                  {
+                    title: lit.title.substring(0, 50) + "...",
+                    missingAuthors:
+                      !lit.authors.length ||
+                      lit.authors.includes("Unknown Author"),
+                    missingJournal: isUnknownJournal,
+                    missingDoi: !lit.doi,
+                    missingAbstract: !lit.abstract,
+                  }
+                );
 
                 try {
                   // First try to get metadata by DOI if available
                   if (lit.doi && lit.doi.startsWith("10.")) {
-                    const doiResults = await crossrefService.getWorksByDois([lit.doi]);
+                    const doiResults = await crossrefService.getWorksByDois([
+                      lit.doi,
+                    ]);
                     if (doiResults.length > 0 && doiResults[0]) {
                       const crossrefWork = doiResults[0];
                       const improvedAuthors =
-                        lit.authors.length && !lit.authors.includes("Unknown Author")
+                        lit.authors.length &&
+                        !lit.authors.includes("Unknown Author")
                           ? lit.authors
                           : crossrefService.formatAuthors(crossrefWork.author);
-                      const improvedJournal =
-                        !isUnknownJournal
-                          ? lit.journal
-                          : crossrefService.extractJournal(crossrefWork);
+                      const improvedJournal = !isUnknownJournal
+                        ? lit.journal
+                        : crossrefService.extractJournal(crossrefWork);
                       const improvedYear =
                         lit.year || crossrefService.extractYear(crossrefWork);
                       const improvedAbstract =
                         lit.abstract || crossrefWork.abstract || lit.abstract;
                       const improvedCitations =
-                        lit.citationCount || crossrefWork["is-referenced-by-count"] || lit.citationCount;
+                        lit.citationCount ||
+                        crossrefWork["is-referenced-by-count"] ||
+                        lit.citationCount;
 
                       return {
                         ...lit,
@@ -404,27 +406,30 @@ export async function POST(request: NextRequest) {
                   }
 
                   // If DOI lookup fails, try bibliographic search by title
-                  const bibliographicResults = await crossrefService.searchByBibliographic(
-                    lit.title,
-                    { rows: 1, type: "journal-article" }
-                  );
+                  const bibliographicResults =
+                    await crossrefService.searchByBibliographic(lit.title, {
+                      rows: 1,
+                      type: "journal-article",
+                    });
 
                   if (bibliographicResults.length > 0) {
                     const crossrefWork = bibliographicResults[0];
                     const improvedAuthors =
-                      lit.authors.length && !lit.authors.includes("Unknown Author")
+                      lit.authors.length &&
+                      !lit.authors.includes("Unknown Author")
                         ? lit.authors
                         : crossrefService.formatAuthors(crossrefWork.author);
-                    const improvedJournal =
-                      !isUnknownJournal
-                        ? lit.journal
-                        : crossrefService.extractJournal(crossrefWork);
+                    const improvedJournal = !isUnknownJournal
+                      ? lit.journal
+                      : crossrefService.extractJournal(crossrefWork);
                     const improvedYear =
                       lit.year || crossrefService.extractYear(crossrefWork);
                     const improvedAbstract =
                       lit.abstract || crossrefWork.abstract || lit.abstract;
                     const improvedCitations =
-                      lit.citationCount || crossrefWork["is-referenced-by-count"] || lit.citationCount;
+                      lit.citationCount ||
+                      crossrefWork["is-referenced-by-count"] ||
+                      lit.citationCount;
                     const improvedDoi = lit.doi || crossrefWork.DOI || lit.doi;
 
                     return {
@@ -438,10 +443,15 @@ export async function POST(request: NextRequest) {
                     };
                   }
 
-                  console.log(`No Crossref enhancement found for literature ${lit.id}`);
+                  console.log(
+                    `No Crossref enhancement found for literature ${lit.id}`
+                  );
                   return lit;
                 } catch (enhancementError) {
-                  console.error(`Crossref enhancement failed for literature ${lit.id}:`, enhancementError);
+                  console.error(
+                    `Crossref enhancement failed for literature ${lit.id}:`,
+                    enhancementError
+                  );
                   return lit;
                 }
               })
@@ -462,8 +472,50 @@ export async function POST(request: NextRequest) {
         })
       );
 
-      // Convert enhanced Exa results to our Literature format for final response
-      const finalResults: SentenceResult[] = enhancedExaResults.map(
+      // Step 4: Evaluate literature after metadata enhancement for better scoring
+      const evaluatedEnhancedResults = await Promise.all(
+        enhancedExaResults.map(async ({ sentence, index, literature }) => {
+          try {
+            const evaluations = await evaluationService.evaluateMultipleLiterature(
+              sentence,
+              literature.map((lit) => ({
+                title: lit.title,
+                authors: lit.authors,
+                journal: lit.journal,
+                year: lit.year,
+                abstract: lit.abstract,
+                doi: lit.doi,
+                citationCount: lit.citationCount,
+                impactFactor: lit.impactFactor,
+                contextIntent: analysis.intent,
+                contextKeywords: analysis.keywords,
+              }))
+            );
+
+            const withEvaluations = literature.map((lit, i) => ({
+              ...lit,
+              evaluation: evaluations[i],
+            }));
+
+            // Sort by quality without filtering - keep all literature
+            const sorted = DeduplicationService.sortByRelevanceAndQuality(
+              withEvaluations
+            );
+
+            return { sentence, index, literature: sorted };
+          } catch (error) {
+            console.error(
+              `Post-enhancement evaluation failed for sentence: "${sentence}"`,
+              error
+            );
+            // Even if evaluation fails, return literature as-is
+            return { sentence, index, literature };
+          }
+        })
+      );
+
+      // Convert evaluated results to our Literature format for final response
+      const finalResults: SentenceResult[] = evaluatedEnhancedResults.map(
         ({ sentence, index, literature }) => ({
           sentence,
           sentenceIndex: index + 1,
