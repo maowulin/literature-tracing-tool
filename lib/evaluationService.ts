@@ -30,6 +30,9 @@ interface EvaluationRequest {
   doi?: string
   citationCount?: number
   impactFactor?: number
+  // add context for better evaluation
+  contextIntent?: string
+  contextKeywords?: string[]
 }
 
 export class EvaluationService extends BaseService {
@@ -158,55 +161,44 @@ export class EvaluationService extends BaseService {
         console.log('Parsed evaluation:', evaluation)
         
         const validatedEvaluation = LiteratureEvaluationSchema.parse(evaluation)
-        console.log('Successfully validated evaluation:', validatedEvaluation)
         return validatedEvaluation
       } catch (parseError) {
-        console.error('Failed to parse evaluation JSON:', parseError)
-        console.log('Raw content that failed to parse:', content)
+        console.error('Failed to parse AI response as JSON:', parseError)
         console.log('Returning fallback evaluation due to parse error')
         return this.getFallbackEvaluation(request)
       }
-
     } catch (error) {
-      console.error('Literature evaluation failed:', error)
-      // Return fallback evaluation on error (including timeout)
-      if (error instanceof Error && error.name === 'AbortError') {
-        console.error('Evaluation request timed out')
-      }
-      console.log('Returning fallback evaluation due to exception')
+      console.error('EvaluationService error:', error)
+      console.log('Returning fallback evaluation due to unexpected error')
       return this.getFallbackEvaluation(request)
     }
   }
 
   private getFallbackEvaluation(request: EvaluationRequest): LiteratureEvaluation {
-    // Generate basic evaluation based on available metadata
-    const currentYear = new Date().getFullYear()
-    const yearScore = Math.max(0, 10 - (currentYear - request.year) * 0.5)
-    const citationScore = request.citationCount ? Math.min(10, Math.log10(request.citationCount + 1) * 2) : 5
-    const impactScore = request.impactFactor ? Math.min(10, request.impactFactor * 2) : 5
-    
+    // Simple heuristic fallback using available metadata
+    const yearWeight = Math.max(0, (new Date().getFullYear() - (request.year || new Date().getFullYear())))
+    const citationScore = Math.min(10, Math.max(0, (request.citationCount || 0) / 100))
+    const impactScore = Math.min(10, Math.max(0, (request.impactFactor || 0) / 5))
+
+    const relevanceScore = 6 // default moderate relevance
+    const credibilityScore = Math.round((citationScore + impactScore) / 2)
+    const impactFinalScore = Math.round((citationScore + impactScore) / 2)
+
     return {
       relevance: {
-        score: Math.min(10, Math.max(1, 7 + Math.random() * 2)), // 7-9 range
-        reason: `Literature appears relevant to the query "${request.query}" based on title and journal context.`
+        score: relevanceScore,
+        reason: 'Fallback evaluation based on limited metadata'
       },
       credibility: {
-        score: Math.min(10, Math.max(1, (yearScore + citationScore) / 2)),
-        reason: `Credibility assessed based on publication year (${request.year}) and citation metrics.`
+        score: credibilityScore,
+        reason: 'Estimated credibility from citation and impact factor'
       },
       impact: {
-        score: Math.min(10, Math.max(1, impactScore)),
-        reason: `Impact score derived from journal impact factor and citation count.`
+        score: impactFinalScore,
+        reason: 'Estimated impact from citation and impact factor'
       },
-      advantages: [
-        'Published in peer-reviewed journal',
-        'Relevant to research query',
-        'Available metadata for assessment'
-      ],
-      limitations: [
-        'Automated evaluation without full text analysis',
-        'Limited context for comprehensive assessment'
-      ]
+      advantages: ['Academic paper'],
+      limitations: ['LLM evaluation unavailable']
     }
   }
 
@@ -214,9 +206,21 @@ export class EvaluationService extends BaseService {
     query: string,
     literatureList: Array<Omit<EvaluationRequest, 'query'>>
   ): Promise<LiteratureEvaluation[]> {
-    const evaluationPromises = literatureList.map(literature =>
-      this.evaluateLiterature({ query, ...literature })
-    )
+    const evaluationPromises = literatureList.map((lit) => {
+      return this.evaluateLiterature({
+        query,
+        title: lit.title,
+        authors: lit.authors,
+        journal: lit.journal,
+        year: lit.year,
+        abstract: lit.abstract,
+        doi: lit.doi,
+        citationCount: lit.citationCount,
+        impactFactor: lit.impactFactor,
+        contextIntent: (lit as EvaluationRequest).contextIntent,
+        contextKeywords: (lit as EvaluationRequest).contextKeywords,
+      })
+    })
 
     try {
       return await Promise.all(evaluationPromises)
@@ -228,16 +232,7 @@ export class EvaluationService extends BaseService {
   }
 
   private buildSystemPrompt(): string {
-    return `You are an expert academic literature evaluator. Evaluate the relevance and quality of academic papers based on the given query and paper details. 
-
-Respond with a JSON object containing:
-- relevance: object with score (0-10) and reason (string explaining relevance to query)
-- credibility: object with score (0-10) and reason (string explaining credibility assessment)
-- impact: object with score (0-10) and reason (string explaining impact assessment)
-- advantages: array of strings (key strengths of the paper)
-- limitations: array of strings (potential limitations and methodological concerns)
-
-Be objective and consider factors like journal reputation, citation count, impact factor, and relevance to the query.`
+    return `You are an expert academic literature evaluator. Evaluate the relevance and quality of academic papers based on the given query and paper details. \n\nUtilize the provided context intent and keywords to better understand the user's underlying research aim and terminology. If context is missing, proceed with the query alone.\n\nRespond with a JSON object containing:\n- relevance: object with score (0-10) and reason (string explaining relevance to query)\n- credibility: object with score (0-10) and reason (string explaining credibility assessment)\n- impact: object with score (0-10) and reason (string explaining impact assessment)\n- advantages: array of strings (key strengths of the paper)\n- limitations: array of strings (potential limitations and methodological concerns)\n\nBe objective and consider factors like journal reputation, citation count, impact factor, and relevance to the query.`
   }
 
   private buildEvaluationPrompt(request: EvaluationRequest): string {
@@ -245,6 +240,9 @@ Be objective and consider factors like journal reputation, citation count, impac
 Please evaluate the following academic paper for its relevance and quality based on the user's query.
 
 **User Query:** "${request.query}"
+
+**Context Intent:** ${request.contextIntent ? request.contextIntent : 'Not provided'}
+**Context Keywords:** ${request.contextKeywords && request.contextKeywords.length > 0 ? request.contextKeywords.join(', ') : 'Not provided'}
 
 **Paper Information:**
 - Title: ${request.title}
@@ -257,7 +255,7 @@ Please evaluate the following academic paper for its relevance and quality based
 - Abstract: ${request.abstract || 'Not available'}
 
 **Evaluation Criteria:**
-1. **Relevance:** How well does this paper address the user's query?
+1. **Relevance:** How well does this paper address the user's query (consider intent and keywords if provided)?
 2. **Credibility:** Based on journal reputation, citation count, and author credentials
 3. **Impact:** Based on citation count, impact factor, and potential influence
 

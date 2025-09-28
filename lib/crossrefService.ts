@@ -1,7 +1,7 @@
 import { BaseService } from './base/BaseService'
 import { APIResponse, SearchOptions } from './types'
 
-interface CrossrefWork {
+export interface CrossrefWork {
   DOI: string;
   title: string[];
   author?: Array<{
