@@ -9,9 +9,6 @@ const nextConfig = {
   async headers() {
     return [];
   },
-  env: {
-    PORT: '9527',
-  },
 };
 
 export default nextConfig;
