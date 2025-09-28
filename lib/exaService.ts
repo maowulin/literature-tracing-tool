@@ -85,6 +85,14 @@ export class ExaService extends BaseService {
         throw new Error(response.error || "Exa search failed");
       }
 
+      // Debug log to check author data
+      console.log("Exa API raw results (first 3):", response.data.results.slice(0, 3).map(result => ({
+        title: result.title.substring(0, 50) + "...",
+        author: result.author,
+        hasAuthor: !!result.author,
+        url: result.url
+      })));
+
       return response.data.results;
     } catch (error) {
       console.error("Exa search error:", error);

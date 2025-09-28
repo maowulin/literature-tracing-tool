@@ -97,8 +97,30 @@ function convertExaResultToLiterature(
     ? new Date(exaResult.publishedDate).getFullYear()
     : new Date().getFullYear();
 
-  // Extract authors from author field or use placeholder
-  const authors = exaResult.author ? [exaResult.author] : ["Unknown Author"];
+  // Extract authors from author field, try to parse multiple authors, or use placeholder
+  let authors: string[] = ["Unknown Author"];
+  
+  if (exaResult.author && exaResult.author.trim()) {
+    // Try to split multiple authors by common separators
+    const authorStr = exaResult.author.trim();
+    if (authorStr.includes(',') || authorStr.includes(';') || authorStr.includes(' and ')) {
+      // Split by common author separators and clean up
+      authors = authorStr
+        .split(/[,;]|\s+and\s+/i)
+        .map(author => author.trim())
+        .filter(author => author.length > 0 && !author.match(/^\d+$/)); // Remove empty strings and standalone numbers
+    } else {
+      authors = [authorStr];
+    }
+  }
+
+  // Debug log for author processing
+  console.log(`Converting Exa result ${id}:`, {
+    title: exaResult.title.substring(0, 50) + "...",
+    originalAuthor: exaResult.author,
+    processedAuthors: authors,
+    hasAuthor: !!exaResult.author
+  });
 
   // Extract DOI from URL if it's a DOI link, otherwise use URL
   const doi = exaResult.url.includes("doi.org")
@@ -284,10 +306,9 @@ export async function POST(request: NextRequest) {
             const enhancedLiterature = await Promise.all(
               literature.map(async (lit) => {
                 // Check if literature has missing critical metadata
-                const needsEnhancement = 
-                  !lit.authors.length || 
-                  lit.authors.includes("Unknown") ||
-                  !lit.journal || 
+                const needsEnhancement =
+                  (!lit.authors.length || lit.authors.includes("Unknown Author")) ||
+                  !lit.journal ||
                   lit.journal === "Unknown" ||
                   !lit.doi ||
                   !lit.abstract;
@@ -299,7 +320,7 @@ export async function POST(request: NextRequest) {
 
                 console.log(`Enhancing literature ${lit.id} with missing metadata:`, {
                   title: lit.title.substring(0, 50) + "...",
-                  missingAuthors: !lit.authors.length || lit.authors.includes("Unknown"),
+                  missingAuthors: !lit.authors.length || lit.authors.includes("Unknown Author"),
                   missingJournal: !lit.journal || lit.journal === "Unknown",
                   missingDoi: !lit.doi,
                   missingAbstract: !lit.abstract,
@@ -313,7 +334,7 @@ export async function POST(request: NextRequest) {
                       const crossrefWork = doiResults[0];
                       return {
                         ...lit,
-                        authors: lit.authors.length && !lit.authors.includes("Unknown") 
+                        authors: lit.authors.length && !lit.authors.includes("Unknown Author") 
                           ? lit.authors 
                           : crossrefWork.author?.map((a: any) => `${a.given || ""} ${a.family || ""}`.trim()) || lit.authors,
                         journal: lit.journal && lit.journal !== "Unknown" 
@@ -336,7 +357,7 @@ export async function POST(request: NextRequest) {
                     const crossrefWork = bibliographicResults[0];
                     return {
                       ...lit,
-                      authors: lit.authors.length && !lit.authors.includes("Unknown") 
+                      authors: lit.authors.length && !lit.authors.includes("Unknown Author") 
                         ? lit.authors 
                         : crossrefWork.author?.map((a: any) => `${a.given || ""} ${a.family || ""}`.trim()) || lit.authors,
                       journal: lit.journal && lit.journal !== "Unknown" 
