@@ -26,7 +26,7 @@ export type ExaSearchResponse = z.infer<typeof ExaSearchResponseSchema>
 
 interface ExaSearchOptions extends SearchOptions {
   query: string
-  type?: 'neural' | 'keyword'
+  type?: 'neural' | 'keyword' | 'auto'
   useAutoprompt?: boolean
   numResults?: number
   startCrawlDate?: string
@@ -66,7 +66,7 @@ export class ExaService extends BaseService {
         startPublishedDate: options.startPublishedDate,
         endPublishedDate: options.endPublishedDate,
         useAutoprompt: options.useAutoprompt !== false,
-        type: options.type || 'neural',
+        type: options.type || 'auto',
         category: options.category || 'research paper',
         contents: {
           text: options.includeText !== false,
@@ -116,7 +116,7 @@ export class ExaService extends BaseService {
          startPublishedDate: options.startPublishedDate,
          endPublishedDate: options.endPublishedDate,
          useAutoprompt: options.useAutoprompt !== false,
-         type: options.type || 'neural',
+         type: options.type || 'auto',
          category: options.category || 'research paper',
          contents: {
            text: options.includeText !== false,

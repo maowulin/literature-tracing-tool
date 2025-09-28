@@ -175,7 +175,7 @@ export async function POST(request: NextRequest) {
     try {
       // Search with Exa for each sentence
       const exaResults = await exaService.searchMultipleQueries(sentences, {
-        type: 'neural',
+        type: 'auto',
         category: 'research paper',
         numResults: 5,
         includeText: true,
