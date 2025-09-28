@@ -213,6 +213,7 @@ export async function POST(request: NextRequest) {
         type: "auto",
         category: "research paper",
         text: true,
+        numResults: 10,
       });
 
       console.log("EXA search completed:", {
