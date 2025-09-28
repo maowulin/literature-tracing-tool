@@ -34,10 +34,26 @@
 
 ## 常用命令
 
-- 开发：pnpm run dev
-- 构建：pnpm run build
-- 生产：pnpm run start
-- Lint：pnpm run lint
+- 开发：pnpm dev
+- 构建：pnpm build
+- 生产：pnpm start
+- Lint：pnpm lint
+
+## 服务信息
+
+- Exa API：https://api.exa.ai/search
+  - 密钥：从环境变量 `EXA_API_KEY` 获取
+  - 文档：https://docs.exa.ai/reference/search
+  - 请求示例：
+    ```json
+    {
+      "query": "子宫瘢痕会影响胎盘",
+      "text": true,
+      "type": "auto",
+      "category": "research paper"
+    }
+    ```
+- port: 9527
 
 ## 关键组件与职责
 
@@ -51,23 +67,23 @@
 
 ```ts
 interface Literature {
-  id: number
-  title: string
-  authors: string[]
-  journal: string
-  year: number
-  doi: string
-  verified: boolean
-  supportingPages?: number
-  abstract?: string
-  impactFactor?: number
-  citationCount?: number
+  id: number;
+  title: string;
+  authors: string[];
+  journal: string;
+  year: number;
+  doi: string;
+  verified: boolean;
+  supportingPages?: number;
+  abstract?: string;
+  impactFactor?: number;
+  citationCount?: number;
 }
 
 interface SentenceResult {
-  sentence: string
-  sentenceIndex: number
-  literature: Literature[]
+  sentence: string;
+  sentenceIndex: number;
+  literature: Literature[];
 }
 ```
 
