@@ -175,21 +175,27 @@ export function SentenceResultSection({
         }),
       });
 
-      // Check if response is ok first
+      const data = await response.json();
+
       if (!response.ok) {
         let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        try {
-          const errorData = await response.json();
-          if (errorData.error) {
-            errorMessage = errorData.error;
-          }
-        } catch {
-          // If JSON parsing fails, use the HTTP status message
+        
+        if (data.error) {
+          errorMessage = data.error;
+        } else if (data.details) {
+          errorMessage = `${data.message || 'Request failed'}: ${JSON.stringify(data.details)}`;
+        } else if (data.message) {
+          errorMessage = data.message;
         }
+        
+        console.error("API Error Response:", {
+          status: response.status,
+          statusText: response.statusText,
+          data: data
+        });
+        
         throw new Error(errorMessage);
       }
-
-      const data = await response.json();
 
       if (data.success) {
         setLiteratureData((prev) =>
@@ -201,7 +207,9 @@ export function SentenceResultSection({
         );
         toast({ description: "AI评分完成" });
       } else {
-        throw new Error(data.error || "Evaluation failed");
+        const errorMessage = data.error || data.message || "Evaluation failed";
+        console.error("Evaluation failed:", data);
+        throw new Error(errorMessage);
       }
     } catch (error) {
       console.error("Literature evaluation failed:", error);

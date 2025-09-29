@@ -149,6 +149,9 @@ export class EvaluationService extends BaseService {
       }
 
       console.log("Raw AI response content:", content);
+      console.log("Raw content length:", content.length);
+      console.log("Raw content first 200 chars:", content.substring(0, 200));
+      console.log("Raw content last 200 chars:", content.substring(Math.max(0, content.length - 200)));
 
       // Try to parse the JSON response
       try {
@@ -168,15 +171,36 @@ export class EvaluationService extends BaseService {
         }
 
         console.log("Cleaned content for parsing:", cleanContent);
+        console.log("Cleaned content length:", cleanContent.length);
+        console.log("Cleaned content first 200 chars:", cleanContent.substring(0, 200));
+        console.log("Cleaned content last 200 chars:", cleanContent.substring(Math.max(0, cleanContent.length - 200)));
 
-        const evaluation = JSON.parse(cleanContent);
-        console.log("Parsed evaluation:", evaluation);
+        // Try to find the JSON part more carefully
+        let jsonStartIndex = cleanContent.indexOf('{');
+        let jsonEndIndex = cleanContent.lastIndexOf('}');
+        
+        if (jsonStartIndex !== -1 && jsonEndIndex !== -1 && jsonEndIndex > jsonStartIndex) {
+          const potentialJson = cleanContent.substring(jsonStartIndex, jsonEndIndex + 1);
+          console.log("Extracted potential JSON:", potentialJson);
+          console.log("Potential JSON length:", potentialJson.length);
+          
+          const evaluation = JSON.parse(potentialJson);
+          console.log("Parsed evaluation:", evaluation);
 
-        const validatedEvaluation =
-          LiteratureEvaluationSchema.parse(evaluation);
-        return validatedEvaluation;
+          const validatedEvaluation =
+            LiteratureEvaluationSchema.parse(evaluation);
+          return validatedEvaluation;
+        } else {
+          console.error("Could not find valid JSON boundaries in content");
+          throw new Error("Could not find valid JSON boundaries in AI response");
+        }
       } catch (parseError) {
         console.error("Failed to parse AI response as JSON:", parseError);
+        console.error("Parse error details:", {
+          name: parseError instanceof Error ? parseError.name : 'Unknown',
+          message: parseError instanceof Error ? parseError.message : 'Unknown error',
+          stack: parseError instanceof Error ? parseError.stack : 'No stack trace'
+        });
         throw new Error(`Failed to parse AI response: ${parseError instanceof Error ? parseError.message : 'Unknown parse error'}`);
       }
     } catch (error) {
