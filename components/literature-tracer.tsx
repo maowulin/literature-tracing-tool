@@ -24,7 +24,9 @@ export default function LiteratureTracer() {
 
   // Load search history on component mount
   useEffect(() => {
-    loadSearchHistory()
+    if (typeof window !== 'undefined') {
+      loadSearchHistory()
+    }
   }, [loadSearchHistory])
 
   return (

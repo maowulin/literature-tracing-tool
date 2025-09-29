@@ -61,7 +61,9 @@ export class EvaluationService extends BaseService {
   }
 
   async evaluateLiterature(
-    request: EvaluationRequest
+    request: EvaluationRequest,
+    model?: string,
+    customPrompt?: string
   ): Promise<LiteratureEvaluation> {
     try {
       console.log("=== EVALUATION SERVICE CALLED ===");
@@ -73,8 +75,8 @@ export class EvaluationService extends BaseService {
 
       // Check if API key is available
       if (!apiKey) {
-        console.log("No API key available, returning fallback evaluation");
-        return this.getFallbackEvaluation(request);
+        console.log("No API key available, throwing error");
+        throw new Error("OpenRouter API key is not configured");
       }
 
       // Add alert to make sure we can see this in browser
@@ -89,11 +91,11 @@ export class EvaluationService extends BaseService {
       const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
 
       const requestBody = {
-        model: this.model,
+        model: model || this.model,
         messages: [
           {
             role: "system",
-            content: this.buildSystemPrompt(),
+            content: customPrompt ? customPrompt : this.buildSystemPrompt(),
           },
           {
             role: "user",
@@ -132,9 +134,8 @@ export class EvaluationService extends BaseService {
           errorText
         );
 
-        // Return fallback evaluation instead of throwing error
-        console.log("Returning fallback evaluation due to API error");
-        return this.getFallbackEvaluation(request);
+        // Throw error to let frontend handle it properly
+        throw new Error(`OpenRouter API error: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
       const data = await response.json();
@@ -144,8 +145,7 @@ export class EvaluationService extends BaseService {
 
       if (!content) {
         console.error("No content received from OpenRouter API");
-        console.log("Returning fallback evaluation due to no content");
-        return this.getFallbackEvaluation(request);
+        throw new Error("No content received from OpenRouter API");
       }
 
       console.log("Raw AI response content:", content);
@@ -177,13 +177,12 @@ export class EvaluationService extends BaseService {
         return validatedEvaluation;
       } catch (parseError) {
         console.error("Failed to parse AI response as JSON:", parseError);
-        console.log("Returning fallback evaluation due to parse error");
-        return this.getFallbackEvaluation(request);
+        throw new Error(`Failed to parse AI response: ${parseError instanceof Error ? parseError.message : 'Unknown parse error'}`);
       }
     } catch (error) {
       console.error("EvaluationService error:", error);
-      console.log("Returning fallback evaluation due to unexpected error");
-      return this.getFallbackEvaluation(request);
+      // Re-throw the error to let the API route handle it
+      throw error;
     }
   }
 
@@ -315,7 +314,7 @@ export class EvaluationService extends BaseService {
   }
 
   private buildSystemPrompt(): string {
-    return `You are an expert academic literature evaluator. Evaluate the relevance and quality of academic papers based on the given query and paper details. \n\nUtilize the provided context intent and keywords to better understand the user's underlying research aim and terminology. If context is missing, proceed with the query alone.\n\nRespond with a JSON object containing:\n- relevance: object with score (0-10) and reason (string explaining relevance to query)\n- credibility: object with score (0-10) and reason (string explaining credibility assessment)\n- impact: object with score (0-10) and reason (string explaining impact assessment)\n- advantages: array of strings (key strengths of the paper)\n- limitations: array of strings (potential limitations and methodological concerns)\n\nBe objective and consider factors like journal reputation, citation count, impact factor, and relevance to the query.`;
+    return `You are an expert academic literature evaluator. Evaluate the relevance and quality of academic papers based on the given query and paper details. \n\nUtilize the provided context intent and keywords to better understand the user's underlying research aim and terminology. If context is missing, proceed with the query alone.\n\nCRITICAL: ALL SCORES MUST BE INTEGERS BETWEEN 0 AND 10 (INCLUSIVE). DO NOT EXCEED 10 OR GO BELOW 0.\n\nRespond with a JSON object containing:\n- relevance: object with score (integer 0-10, NO DECIMALS) and reason (string explaining relevance to query)\n- credibility: object with score (integer 0-10, NO DECIMALS) and reason (string explaining credibility assessment)\n- impact: object with score (integer 0-10, NO DECIMALS) and reason (string explaining impact assessment)\n- advantages: array of strings (key strengths of the paper)\n- limitations: array of strings (potential limitations and methodological concerns)\n\nBe objective and consider factors like journal reputation, citation count, impact factor, and relevance to the query. REMEMBER: Scores must be between 0-10 only.`;
   }
 
   private buildEvaluationPrompt(request: EvaluationRequest): string {

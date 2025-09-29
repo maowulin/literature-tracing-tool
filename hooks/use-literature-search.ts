@@ -31,41 +31,108 @@ export function useLiteratureSearch(query: string) {
   const { toast } = useToast()
 
   const loadSearchHistory = useCallback(() => {
-    const savedHistory = localStorage.getItem('literature-search-history')
-    if (savedHistory) {
-      try {
+    if (typeof window === 'undefined') return
+    
+    try {
+      const savedHistory = localStorage.getItem('literature-search-history')
+      if (savedHistory) {
         const parsed = JSON.parse(savedHistory)
         setSearchHistory(parsed.map((item: any) => ({
           ...item,
           timestamp: new Date(item.timestamp)
         })))
-      } catch (error) {
-        console.error('Failed to parse search history:', error)
       }
+    } catch (error) {
+      console.error('Failed to parse search history:', error)
     }
   }, [])
 
-  const saveToHistory = useCallback((query: string, results: SearchResults) => {
-    const historyItem: SearchHistoryItem = {
-      id: Date.now().toString(),
-      query,
-      timestamp: new Date(),
-      results
+  const compressResults = (results: SearchResults): SearchResults => {
+    return {
+      results: results.results.map(result => ({
+        sentence: result.sentence,
+        sentenceIndex: result.sentenceIndex,
+        literature: result.literature.map(lit => ({
+          id: lit.id,
+          title: lit.title.length > 100 ? lit.title.substring(0, 100) + '...' : lit.title,
+          authors: lit.authors.slice(0, 3),
+          journal: lit.journal,
+          year: lit.year,
+          doi: lit.doi,
+          verified: lit.verified,
+          supportingPages: lit.supportingPages,
+          abstract: lit.abstract ? (lit.abstract.length > 200 ? lit.abstract.substring(0, 200) + '...' : lit.abstract) : undefined,
+          impactFactor: lit.impactFactor,
+          citationCount: lit.citationCount
+        })).slice(0, 5)
+      })).slice(0, 10)
     }
-    
-    const newHistory = [historyItem, ...searchHistory.slice(0, 9)]
-    setSearchHistory(newHistory)
+  }
+
+  const getStorageSize = (data: string): number => {
+    return new Blob([data]).size
+  }
+
+  const saveToHistory = useCallback((query: string, results: SearchResults) => {
+    if (typeof window === 'undefined') return
     
     try {
+      const compressedResults = compressResults(results)
+      const historyItem: SearchHistoryItem = {
+        id: Date.now().toString(),
+        query,
+        timestamp: new Date(),
+        results: compressedResults
+      }
+      
+      let currentHistory: SearchHistoryItem[] = []
+      try {
+        const stored = localStorage.getItem('literature-search-history')
+        if (stored) {
+          currentHistory = JSON.parse(stored)
+        }
+      } catch (parseError) {
+        console.error('Failed to parse existing search history:', parseError)
+        currentHistory = []
+      }
+      
+      let newHistory = [historyItem, ...currentHistory]
+      
+      const maxStorageSize = 2 * 1024 * 1024
+      let historyData = JSON.stringify(newHistory)
+      
+      while (getStorageSize(historyData) > maxStorageSize && newHistory.length > 1) {
+        newHistory = newHistory.slice(0, -1)
+        historyData = JSON.stringify(newHistory)
+      }
+      
+      newHistory = newHistory.slice(0, 5)
+      setSearchHistory(newHistory)
+      
       localStorage.setItem('literature-search-history', JSON.stringify(newHistory))
     } catch (error) {
-      console.error('Failed to save search history:', error)
+      if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+        try {
+          localStorage.removeItem('literature-search-history')
+          setSearchHistory([])
+          toast({ 
+            description: 'Storage quota exceeded. Search history has been cleared.',
+            variant: 'destructive'
+          })
+        } catch (clearError) {
+          console.error('Failed to clear storage:', clearError)
+        }
+      } else {
+        console.error('Failed to save search history:', error)
+      }
     }
-  }, [searchHistory])
+  }, [toast])
 
   const clearHistory = useCallback(() => {
     setSearchHistory([])
-    localStorage.removeItem('literature-search-history')
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('literature-search-history')
+    }
     toast({ description: 'Search history cleared' })
   }, [toast])
 

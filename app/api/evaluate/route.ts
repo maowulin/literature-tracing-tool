@@ -15,6 +15,8 @@ const EvaluateRequestSchema = z.object({
     citationCount: z.number().optional(),
     impactFactor: z.number().optional(),
   }),
+  model: z.string().optional(),
+  prompt: z.string().optional(),
 });
 
 type EvaluateRequest = z.infer<typeof EvaluateRequestSchema>;
@@ -22,9 +24,11 @@ type EvaluateRequest = z.infer<typeof EvaluateRequestSchema>;
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { query, literature } = EvaluateRequestSchema.parse(body);
+    const { query, literature, model, prompt } = EvaluateRequestSchema.parse(body);
 
     console.log("Evaluating literature:", literature.title);
+    if (model) console.log("Using model:", model);
+    if (prompt) console.log("Using custom prompt");
 
     const evaluation = await evaluationService.evaluateLiterature({
       query,
@@ -36,7 +40,7 @@ export async function POST(request: NextRequest) {
       doi: literature.doi,
       citationCount: literature.citationCount,
       impactFactor: literature.impactFactor,
-    });
+    }, model, prompt);
 
     return NextResponse.json({
       success: true,
@@ -46,14 +50,37 @@ export async function POST(request: NextRequest) {
     console.error("Literature evaluation failed:", error);
     
     if (error instanceof z.ZodError) {
+      const isValidationError = error.errors.some(err => 
+        err.message.includes("Number must be less than or equal to 10") ||
+        err.message.includes("Number must be greater than or equal to 0")
+      );
+      
+      if (isValidationError) {
+        return NextResponse.json(
+          { success: false, error: "Number must be less than or equal to 10" },
+          { status: 400 }
+        );
+      }
+      
       return NextResponse.json(
         { success: false, error: "Invalid request format", details: error.errors },
         { status: 400 }
       );
     }
 
+    if (error instanceof Error) {
+      console.error("Error message:", error.message);
+      console.error("Error stack:", error.stack);
+      return NextResponse.json(
+        { success: false, error: error.message || "Evaluation failed" },
+        { status: 500 }
+      );
+    }
+
+    // Handle non-Error objects
+    const errorMessage = typeof error === 'string' ? error : 'Internal server error';
     return NextResponse.json(
-      { success: false, error: "Internal server error" },
+      { success: false, error: errorMessage },
       { status: 500 }
     );
   }

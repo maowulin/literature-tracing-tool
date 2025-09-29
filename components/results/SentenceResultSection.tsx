@@ -13,6 +13,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import { EvaluationConfig } from "@/components/evaluation/EvaluationConfig";
 
 interface Literature {
   id: number;
@@ -68,6 +69,21 @@ export function SentenceResultSection({
   const [literatureData, setLiteratureData] = useState<Literature[]>(
     result.literature
   );
+  const [evaluationConfig, setEvaluationConfig] = useState({
+    model: "deepseek/deepseek-chat-v3.1:free",
+    prompt: `You are an expert academic literature evaluator. Evaluate the relevance and quality of academic papers based on the given query and paper details. 
+
+    Utilize the provided context intent and keywords to better understand the user's underlying research aim and terminology. If context is missing, proceed with the query alone.
+
+    Respond with a JSON object containing:
+    - relevance: object with score (0-10) and reason (string explaining relevance to query)
+    - credibility: object with score (0-10) and reason (string explaining credibility assessment)
+    - impact: object with score (0-10) and reason (string explaining impact assessment)
+    - advantages: array of strings (key strengths of the paper)
+    - limitations: array of strings (potential limitations and methodological concerns)
+
+    Be objective and consider factors like journal reputation, citation count, impact factor, and relevance to the query.`,
+  });
   const { toast } = useToast();
 
   // Use backend-provided highlighting for the sentence if available later; currently keep plain text
@@ -154,8 +170,24 @@ export function SentenceResultSection({
             citationCount: literature.citationCount,
             impactFactor: literature.impactFactor,
           },
+          model: evaluationConfig.model,
+          prompt: evaluationConfig.prompt,
         }),
       });
+
+      // Check if response is ok first
+      if (!response.ok) {
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          if (errorData.error) {
+            errorMessage = errorData.error;
+          }
+        } catch {
+          // If JSON parsing fails, use the HTTP status message
+        }
+        throw new Error(errorMessage);
+      }
 
       const data = await response.json();
 
@@ -173,8 +205,38 @@ export function SentenceResultSection({
       }
     } catch (error) {
       console.error("Literature evaluation failed:", error);
+
+      let errorMessage = "AI评分失败，请稍后重试";
+
+      if (error instanceof Error) {
+        const errorText = error.message.toLowerCase();
+
+        if (
+          errorText.includes("number must be less than or equal to 10") ||
+          errorText.includes("validation") ||
+          errorText.includes("zod")
+        ) {
+          errorMessage = "AI模型返回的评分超出范围，请尝试更换模型或重新评分";
+        } else if (
+          errorText.includes("timeout") ||
+          errorText.includes("network")
+        ) {
+          errorMessage = "网络超时，请检查网络连接后重试";
+        } else if (
+          errorText.includes("rate limit") ||
+          errorText.includes("quota")
+        ) {
+          errorMessage = "API调用频率过高，请稍后重试";
+        } else if (
+          errorText.includes("context") ||
+          errorText.includes("token")
+        ) {
+          errorMessage = "文本内容过长，请尝试缩短查询内容或更换模型";
+        }
+      }
+
       toast({
-        description: "AI评分失败，请稍后重试",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -231,6 +293,11 @@ export function SentenceResultSection({
 
       {isExpanded && (
         <CardContent className="space-y-4 animate-in slide-in-from-top-2 duration-200">
+          <EvaluationConfig
+            onConfigChange={setEvaluationConfig}
+            defaultModel={evaluationConfig.model}
+            defaultPrompt={evaluationConfig.prompt}
+          />
           {literatureData.map((lit) => (
             <Card key={lit.id} className="border-l-4 border-l-blue-500">
               <CardContent className="p-4">
@@ -460,27 +527,25 @@ export function SentenceResultSection({
                       >
                         <Copy className="w-3 h-3 mr-1" /> 复制引用
                       </Button>
-                      {!lit.evaluation && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => evaluateLiterature(lit)}
-                          disabled={evaluatingLiterature.has(lit.id)}
-                          className="h-6"
-                        >
-                          {evaluatingLiterature.has(lit.id) ? (
-                            <>
-                              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                              评分中...
-                            </>
-                          ) : (
-                            <>
-                              <Brain className="w-3 h-3 mr-1" />
-                              AI评分
-                            </>
-                          )}
-                        </Button>
-                      )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => evaluateLiterature(lit)}
+                        disabled={evaluatingLiterature.has(lit.id)}
+                        className="h-6"
+                      >
+                        {evaluatingLiterature.has(lit.id) ? (
+                          <>
+                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                            评分中...
+                          </>
+                        ) : (
+                          <>
+                            <Brain className="w-3 h-3 mr-1" />
+                            {lit.evaluation ? "重新评分" : "AI评分"}
+                          </>
+                        )}
+                      </Button>
                     </div>
                   </div>
                 </div>
