@@ -472,50 +472,15 @@ export async function POST(request: NextRequest) {
         })
       );
 
-      // Step 4: Evaluate literature after metadata enhancement for better scoring
-      const evaluatedEnhancedResults = await Promise.all(
-        enhancedExaResults.map(async ({ sentence, index, literature }) => {
-          try {
-            const evaluations = await evaluationService.evaluateMultipleLiterature(
-              sentence,
-              literature.map((lit) => ({
-                title: lit.title,
-                authors: lit.authors,
-                journal: lit.journal,
-                year: lit.year,
-                abstract: lit.abstract,
-                doi: lit.doi,
-                citationCount: lit.citationCount,
-                impactFactor: lit.impactFactor,
-                contextIntent: analysis.intent,
-                contextKeywords: analysis.keywords,
-              }))
-            );
+      // Step 4: Sort literature by quality without AI evaluation (manual trigger)
+      const sortedResults = enhancedExaResults.map(({ sentence, index, literature }) => {
+        // Sort by quality without AI evaluation - keep all literature
+        const sorted = DeduplicationService.sortByRelevanceAndQuality(literature);
+        return { sentence, index, literature: sorted };
+      });
 
-            const withEvaluations = literature.map((lit, i) => ({
-              ...lit,
-              evaluation: evaluations[i],
-            }));
-
-            // Sort by quality without filtering - keep all literature
-            const sorted = DeduplicationService.sortByRelevanceAndQuality(
-              withEvaluations
-            );
-
-            return { sentence, index, literature: sorted };
-          } catch (error) {
-            console.error(
-              `Post-enhancement evaluation failed for sentence: "${sentence}"`,
-              error
-            );
-            // Even if evaluation fails, return literature as-is
-            return { sentence, index, literature };
-          }
-        })
-      );
-
-      // Convert evaluated results to our Literature format for final response
-      const finalResults: SentenceResult[] = evaluatedEnhancedResults.map(
+      // Convert sorted results to our Literature format for final response
+      const finalResults: SentenceResult[] = sortedResults.map(
         ({ sentence, index, literature }) => ({
           sentence,
           sentenceIndex: index + 1,

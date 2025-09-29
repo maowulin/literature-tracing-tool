@@ -9,6 +9,8 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronUp,
+  Brain,
+  Loader2,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -59,6 +61,12 @@ export function SentenceResultSection({
   );
   const [expandedAbstracts, setExpandedAbstracts] = useState<Set<number>>(
     new Set()
+  );
+  const [evaluatingLiterature, setEvaluatingLiterature] = useState<Set<number>>(
+    new Set()
+  );
+  const [literatureData, setLiteratureData] = useState<Literature[]>(
+    result.literature
   );
   const { toast } = useToast();
 
@@ -122,6 +130,62 @@ export function SentenceResultSection({
     return "一般";
   };
 
+  const evaluateLiterature = async (literature: Literature) => {
+    if (evaluatingLiterature.has(literature.id)) return;
+
+    setEvaluatingLiterature((prev) => new Set(prev).add(literature.id));
+
+    try {
+      const response = await fetch("/api/evaluate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: searchQuery,
+          literature: {
+            id: literature.id,
+            title: literature.title,
+            authors: literature.authors,
+            journal: literature.journal,
+            year: literature.year,
+            abstract: literature.abstract,
+            doi: literature.doi,
+            citationCount: literature.citationCount,
+            impactFactor: literature.impactFactor,
+          },
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setLiteratureData((prev) =>
+          prev.map((lit) =>
+            lit.id === literature.id
+              ? { ...lit, evaluation: data.evaluation }
+              : lit
+          )
+        );
+        toast({ description: "AI评分完成" });
+      } else {
+        throw new Error(data.error || "Evaluation failed");
+      }
+    } catch (error) {
+      console.error("Literature evaluation failed:", error);
+      toast({
+        description: "AI评分失败，请稍后重试",
+        variant: "destructive",
+      });
+    } finally {
+      setEvaluatingLiterature((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(literature.id);
+        return newSet;
+      });
+    }
+  };
+
   return (
     <Card className="mb-6 border-2 transition-all duration-200 hover:shadow-md">
       <CardHeader
@@ -167,7 +231,7 @@ export function SentenceResultSection({
 
       {isExpanded && (
         <CardContent className="space-y-4 animate-in slide-in-from-top-2 duration-200">
-          {result.literature.map((lit) => (
+          {literatureData.map((lit) => (
             <Card key={lit.id} className="border-l-4 border-l-blue-500">
               <CardContent className="p-4">
                 <div className="space-y-3">
@@ -396,6 +460,27 @@ export function SentenceResultSection({
                       >
                         <Copy className="w-3 h-3 mr-1" /> 复制引用
                       </Button>
+                      {!lit.evaluation && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => evaluateLiterature(lit)}
+                          disabled={evaluatingLiterature.has(lit.id)}
+                          className="h-6"
+                        >
+                          {evaluatingLiterature.has(lit.id) ? (
+                            <>
+                              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                              评分中...
+                            </>
+                          ) : (
+                            <>
+                              <Brain className="w-3 h-3 mr-1" />
+                              AI评分
+                            </>
+                          )}
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
