@@ -207,7 +207,10 @@ export function SentenceResultSection({
               : lit
           )
         );
-        toast({ description: "AI评分完成" });
+        toast({ 
+          description: "AI评分完成",
+          variant: "success"
+        });
       } else {
         const errorMessage = data.error || data.message || "Evaluation failed";
         console.error("Evaluation failed:", data);
