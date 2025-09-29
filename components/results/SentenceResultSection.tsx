@@ -179,21 +179,23 @@ export function SentenceResultSection({
 
       if (!response.ok) {
         let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        
+
         if (data.error) {
           errorMessage = data.error;
         } else if (data.details) {
-          errorMessage = `${data.message || 'Request failed'}: ${JSON.stringify(data.details)}`;
+          errorMessage = `${data.message || "Request failed"}: ${JSON.stringify(
+            data.details
+          )}`;
         } else if (data.message) {
           errorMessage = data.message;
         }
-        
+
         console.error("API Error Response:", {
           status: response.status,
           statusText: response.statusText,
-          data: data
+          data: data,
         });
-        
+
         throw new Error(errorMessage);
       }
 
@@ -391,7 +393,7 @@ export function SentenceResultSection({
 
                   {/* Abstract */}
                   {lit.abstract && (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="text-sm font-medium text-muted-foreground">
                           摘要
@@ -402,7 +404,7 @@ export function SentenceResultSection({
                               variant="ghost"
                               size="sm"
                               onClick={() => toggleAbstractExpansion(lit.id)}
-                              className="h-7 px-2 text-blue-600 inline-flex items-center gap-1"
+                              className="h-7 px-2 text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
                             >
                               {expandedAbstracts.has(lit.id) ? (
                                 <>
@@ -428,35 +430,39 @@ export function SentenceResultSection({
                         </div>
                       </div>
 
-                      <div className="text-sm leading-relaxed break-words">
-                        {isAbstractLong(lit.abstract) &&
-                        !expandedAbstracts.has(lit.id) ? (
-                          <>
-                            {lit.highlightedAbstract ? (
-                              <div
-                                dangerouslySetInnerHTML={{
-                                  __html: getTruncatedAbstract(
-                                    lit.highlightedAbstract
-                                  ),
-                                }}
-                              />
-                            ) : (
-                              getTruncatedAbstract(lit.abstract)
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            {lit.highlightedAbstract ? (
-                              <div
-                                dangerouslySetInnerHTML={{
-                                  __html: lit.highlightedAbstract,
-                                }}
-                              />
-                            ) : (
-                              lit.abstract
-                            )}
-                          </>
-                        )}
+                      <div className="bg-muted/30 border border-border/50 rounded-lg p-4">
+                        <div className="text-sm leading-7 text-foreground/90 [&_mark]:bg-yellow-200 [&_mark]:text-yellow-900 [&_mark]:px-1 [&_mark]:py-0.5 [&_mark]:rounded [&_mark]:font-medium whitespace-pre-line break-words hyphens-auto overflow-hidden">
+                          {isAbstractLong(lit.abstract) &&
+                          !expandedAbstracts.has(lit.id) ? (
+                            <>
+                              {lit.highlightedAbstract ? (
+                                <div
+                                  dangerouslySetInnerHTML={{
+                                    __html: getTruncatedAbstract(
+                                      lit.highlightedAbstract
+                                    ),
+                                  }}
+                                />
+                              ) : (
+                                <span>
+                                  {getTruncatedAbstract(lit.abstract)}
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {lit.highlightedAbstract ? (
+                                <div
+                                  dangerouslySetInnerHTML={{
+                                    __html: lit.highlightedAbstract,
+                                  }}
+                                />
+                              ) : (
+                                <span>{lit.abstract}</span>
+                              )}
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}

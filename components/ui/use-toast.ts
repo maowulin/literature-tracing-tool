@@ -139,7 +139,7 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, 'id'>
 
-function toast({ ...props }: Toast) {
+function toast({ duration, ...props }: Toast & { duration?: number }) {
   const id = genId()
 
   const update = (props: ToasterToast) =>
@@ -160,6 +160,18 @@ function toast({ ...props }: Toast) {
       },
     },
   })
+
+  // Auto-dismiss toast after specified duration
+  if (duration !== undefined && duration > 0) {
+    setTimeout(() => {
+      dismiss()
+    }, duration)
+  } else if (props.variant === 'destructive') {
+    // Auto-dismiss error toasts after 4 seconds
+    setTimeout(() => {
+      dismiss()
+    }, 4000)
+  }
 
   return {
     id: id,
